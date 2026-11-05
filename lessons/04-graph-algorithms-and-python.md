@@ -1,0 +1,153 @@
+# Lesson 4 — Graph algorithms (GDS) and Python
+
+Needs the Graph Data Science plugin — already enabled by the [Dockerfile](../Dockerfile).
+Check: `RETURN gds.version()` → `"2.13.14"` in the original run.
+
+## 4.1 — Project an in-memory graph
+
+GDS algorithms run on an in-memory **projection** containing only the nodes and relationships
+you pick.
+
+```cypher
+CALL gds.graph.project('team', ['Person','Project','Skill'], {
+  KNOWS:     {orientation:'UNDIRECTED'},
+  MANAGES:   {orientation:'UNDIRECTED'},
+  WORKS_ON:  {orientation:'UNDIRECTED'},
+  HAS_SKILL: {orientation:'UNDIRECTED'},
+  REQUIRES:  {orientation:'UNDIRECTED'}
+}) YIELD graphName, nodeCount, relationshipCount
+RETURN graphName, nodeCount, relationshipCount
+```
+```
+graphName, nodeCount, relationshipCount
+"team", 16, 50
+```
+50 = 25 relationships stored in both directions (`UNDIRECTED`). Role/Assignment nodes are left out.
+
+## 4.2 — PageRank: who matters most?
+
+```cypher
+CALL gds.pageRank.stream('team') YIELD nodeId, score
+WITH gds.util.asNode(nodeId) AS n, score
+RETURN labels(n)[0] AS type, n.name AS name, round(score, 3) AS pagerank
+ORDER BY pagerank DESC
+```
+```
+type, name, pagerank
+"Person", "Alice", 2.143
+"Person", "Cara", 1.322
+"Skill", "Python", 1.131
+"Project", "Mobile App", 1.124
+"Project", "Search Revamp", 1.108
+"Person", "Eve", 1.106
+"Person", "Finn", 0.91
+"Person", "Bob", 0.881
+"Person", "Dev", 0.855
+"Skill", "TypeScript", 0.836
+"Skill", "Rust", 0.694
+...
+```
+High score = connected to other well-connected nodes. Alice is the hub of this team.
+
+## 4.3 — Louvain: find communities
+
+```cypher
+CALL gds.louvain.stream('team') YIELD nodeId, communityId
+WITH communityId, gds.util.asNode(nodeId) AS n
+RETURN communityId, collect(labels(n)[0] + ': ' + n.name) AS members
+ORDER BY size(members) DESC
+```
+```
+communityId, members
+10, ["Person: Alice", "Person: Cara", "Person: Dev", "Skill: TypeScript", "Project: Legacy Migration", "Person: Finn"]
+7,  ["Person: Eve", "Skill: Python", "Skill: ML", "Project: Search Revamp"]
+1,  ["Person: Bob", "Skill: UX", "Project: Mobile App"]
+14, ["Skill: Rust", "Person: Gia"]
+15, ["Skill: Go"]
+```
+Structure only — no names or labels used — yet it finds a core team, a Search/ML pod, a design
+pod, the Rust newcomers, and an orphaned `Go` (Hal was deleted in Lesson 2).
+Community ids vary between runs.
+
+## 4.4 — Node similarity: who's alike?
+
+```cypher
+CALL gds.nodeSimilarity.stream('team', {
+  relationshipTypes:['HAS_SKILL'], nodeLabels:['Person','Skill'], topK:1
+}) YIELD node1, node2, similarity
+WITH gds.util.asNode(node1) AS a, gds.util.asNode(node2) AS b, similarity
+WHERE a:Person
+RETURN a.name AS person, b.name AS most_similar, round(similarity, 2) AS jaccard
+ORDER BY jaccard DESC
+```
+```
+person, most_similar, jaccard
+"Alice", "Cara", 0.5
+"Cara", "Alice", 0.5
+"Finn", "Gia", 0.5
+"Gia", "Finn", 0.5
+"Eve", "Alice", 0.33
+```
+Jaccard = shared skills ÷ total distinct skills. The core of "people like you…" recommendations.
+
+## 4.5 — Write results back
+
+```cypher
+CALL gds.pageRank.write('team', {writeProperty:'pagerank'}) YIELD nodePropertiesWritten AS pr
+CALL gds.louvain.write('team', {writeProperty:'community'}) YIELD communityCount, nodePropertiesWritten AS lv
+RETURN pr, lv, communityCount
+```
+```
+pr, lv, communityCount
+16, 16, 5
+```
+```cypher
+MATCH (p:Person) WHERE p.pagerank > 1
+RETURN p.name, round(p.pagerank, 2) AS pagerank, p.community ORDER BY pagerank DESC
+```
+```
+p.name, pagerank, p.community
+"Alice", 2.14, 10
+"Cara", 1.32, 10
+"Eve", 1.11, 7
+```
+Modes: `.stream` (return), `.stats` (summary), `.mutate` (projection only), `.write` (database).
+
+## 4.6 — From Python: [`team_graph.py`](../team_graph.py)
+
+```bash
+.venv/bin/python team_graph.py
+```
+```
+Active projects:
+  Search Revamp: Eve, Alice
+  Mobile App: Bob, Cara
+  (took 41 ms)
+
+Wrote: Bob -[:HAS_SKILL {level:2}]-> TypeScript
+
+Alice's network (up to 3 hops), by PageRank:
+  Cara   pagerank=1.32
+  Eve    pagerank=1.11
+  Bob    pagerank=0.88
+```
+Three driver patterns:
+1. `driver.execute_query(...)` for one-offs (handles session + retries).
+2. `session.execute_write(fn)` / `execute_read(fn)` — retried on transient errors.
+3. `$params` everywhere, never f-strings in Cypher.
+
+**Gotcha:** a projection is a snapshot — it won't see Bob's new skill. Refresh with
+`CALL gds.graph.drop('team')` and project again.
+
+---
+
+## Cheat sheet
+
+| Step | Cypher |
+|---|---|
+| Load a subgraph into memory | `CALL gds.graph.project('name', labels, relTypes)` |
+| Influence / importance | `gds.pageRank` (also `gds.betweenness`, `gds.degree`) |
+| Clusters | `gds.louvain` (also `gds.wcc`, `gds.labelPropagation`) |
+| "Similar to" | `gds.nodeSimilarity`, `gds.knn` |
+| Paths | `gds.shortestPath.dijkstra`, `gds.allShortestPaths` |
+| Clean up | `CALL gds.graph.drop('name')` |
