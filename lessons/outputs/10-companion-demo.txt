@@ -1,0 +1,109 @@
+
+======== Session 1 — 2026-11-05 ======================================
+Sage: Hi Alex, I'm Sage. I'd love to get to know you — how's your day going?
+
+Alex: Hi! I'm Alex. I moved to Portland last month for a new job as a UX researcher at Lumen Health.
+Sage: Hi Alex! It's great to meet you. Congratulations on the new job! UX research at Lumen Health sounds fascinating—I imagine there's a lot of interesting work to do there.
+
+How are you settling into Portland so far? I hope the move went smoothly!
+   ✎ linked user -lives_in-> Portland
+   ✎ linked user -works_at-> Lumen Health
+   ✎ + [fact] Alex moved to Portland in October 2026.
+   ✎ + [fact] Alex works as a UX researcher at Lumen Health.
+
+Alex: My sister Maya lives in Denver, she's a nurse. We're really close. Oh, and I have a beagle named Biscuit.
+Sage: Maya sounds wonderful—it's great that you two are so close, even with the distance between Portland and Denver. And Biscuit! I love the name. Beagles have such big personalities; is he settling into the new place well?
+   ✎ linked user -sister-> Maya
+   ✎ linked user -pet-> Biscuit
+   ✎ + [fact] Alex's sister Maya is a nurse living in Denver.
+   ✎ + [fact] Alex and Maya are very close.
+   ✎ + [fact] Alex has a beagle named Biscuit.
+
+Alex: Honestly I'm a bit nervous — I'm giving my first big presentation to leadership next Thursday.
+Sage: It's completely normal to feel some nerves for a first big presentation, especially with leadership watching. You've got the expertise—that's why they hired you!
+
+Do you have your slides mostly ready, or are you still in the planning phase? If you want to bounce some ideas around or practice your talking points, I'm here to help.
+   ✎ + [plan] Alex is giving their first big presentation to leadership on 2026-11-12.
+
+Alex: One thing: please don't bring up my ex, Jordan. That's still a sore spot.
+Sage: I completely understand. I've noted that, and I won't bring them up.
+   ✎ + [boundary] Alex does not want the companion to bring up their ex, Jordan.
+
+   ✎ episode: Alex introduced themselves, sharing that they recently moved to Portland for a UX research role at Lumen Health. They mentioned their close relationship with their sister, Maya, and their beagle, Biscuit. Alex is feeling nervous about an upcoming presentation to leadership next Thursday and requested that the AI never mention their ex, Jordan. (mood: Excited but anxious)
+
+======== Session 2 — 2026-11-13 ======================================
+Sage: Hey Alex! How did your big presentation to leadership go yesterday?
+
+Alex: It went really well actually! My VP said it was the clearest research readout she's seen.
+Sage: That's incredible! Getting a compliment like that from a VP—especially on your first big presentation—is a huge win. You must be feeling a massive weight off your shoulders. 
+
+How are you celebrating? I bet Biscuit is ready for some extra treats to mark the occasion!
+   ✎ plan done m_d8e5d4
+   ✎ + [event] Alex received high praise from their VP for a research readout presentation on 2026-11-12, which the VP described as the clearest she had seen.
+
+Alex: Maya's visiting for Thanksgiving. Any ideas for things to do around Portland that work with a dog?
+Sage: That's so exciting that Maya is coming to visit! I'm sure you're both looking forward to catching up.
+
+Since you're bringing Biscuit along, you could try Forest Park—it's huge and perfect for a long walk to show Maya the greenery of the city. If you're looking for something more low-key, a trip to one of the dog-friendly breweries or coffee shops in the Pearl District is usually a hit. 
+
+Do you think Maya would be more into the nature side of things, or is she looking for some city exploring?
+   ✎ + [plan] Alex's sister Maya is visiting Alex in Portland for Thanksgiving on 2026-11-26.
+
+Alex: Also, small update: I switched teams, I'm on the Research Ops team now instead of the patient app team.
+Sage: Oh, wow! A move to Research Ops is a big shift. How are you feeling about the change? 
+
+It sounds like a great way to use those organizational skills, especially after crushing that presentation. Do you think you'll miss the patient app side of things, or are you excited to dive into the operations side?
+   ✎ + [fact] Alex works on the Research Ops team at Lumen Health.  (replaces m_0c596b)
+
+   ✎ episode: Alex shared the great news that their VP praised their recent research readout as the clearest she's seen. They are also preparing for Maya's visit over Thanksgiving and discussed dog-friendly activities in Portland for Biscuit. Additionally, Alex revealed they have transitioned from the patient app team to the Research Ops team. (mood: Triumphant and excited)
+
+======== /memories (current) =========================================
+  [fact] Alex moved to Portland in October 2026.  ★8
+  [fact] Alex's sister Maya is a nurse living in Denver.  ★7
+  [fact] Alex and Maya are very close.  ★6
+  [fact] Alex has a beagle named Biscuit.  ★5
+  [plan] Alex is giving their first big presentation to leadership on 2026-11-12.  ★5 [done]
+  [boundary] Alex does not want the companion to bring up their ex, Jordan.  ★8
+  [event] Alex received high praise from their VP for a research readout presentation on 2026-11-12, which the VP described as the clearest she had seen.  ★6
+  [plan] Alex's sister Maya is visiting Alex in Portland for Thanksgiving on 2026-11-26.  ★6 [open]
+  [fact] Alex works on the Research Ops team at Lumen Health.  ★5
+
+======== /people =====================================================
+  Lumen Health — works_at (organization)
+  Maya — sister (person)
+  Biscuit — pet (pet)
+  Portland — lives_in (place)
+
+======== /timeline ===================================================
+  2026-11-12  [event] Alex received high praise from their VP for a research readout presentation on 2026-11-12, which the VP described as the clearest she had seen.
+  2026-11-12  [plan] Alex is giving their first big presentation to leadership on 2026-11-12. [done]
+  2026-11-26  [plan] Alex's sister Maya is visiting Alex in Portland for Thanksgiving on 2026-11-26. [open]
+
+======== Superseded facts ============================================
+  now: Alex works on the Research Ops team at Lumen Health.
+  was: Alex works as a UX researcher at Lumen Health.
+
+======== recall("what should we do when my sister visits?") ==========
+Core profile:
+- Alex does not want the companion to bring up their ex, Jordan.
+- Alex moved to Portland in October 2026.
+- Alex's sister Maya is a nurse living in Denver.
+- Alex and Maya are very close.
+
+People and things in their life:
+- Lumen Health (works_at)
+- Maya (sister)
+- Biscuit (pet)
+- Portland (lives_in)
+
+Open plans to follow up on (today is 2026-11-13):
+- Alex's sister Maya is visiting Alex in Portland for Thanksgiving on 2026-11-26. (due 2026-11-26)
+
+Relevant memories:
+- [fact] Alex has a beagle named Biscuit.
+- [event] Alex received high praise from their VP for a research readout presentation on 2026-11-12, which the VP described as the clearest she had seen.
+- [fact] Alex works on the Research Ops team at Lumen Health.
+
+Recent conversations:
+- 2026-11-13 (mood: Triumphant and excited): Alex shared the great news that their VP praised their recent research readout as the clearest she's seen. They are also preparing for Maya's visit over Thanksgiving and discussed dog-friendly activities in Portland for Biscuit. Additionally, Alex revealed they have transitioned from the patient app team to the Research Ops team.
+- 2026-11-05 (mood: Excited but anxious): Alex introduced themselves, sharing that they recently moved to Portland for a UX research role at Lumen Health. They mentioned their close relationship with their sister, Maya, and their beagle, Biscuit. Alex is feeling nervous about an upcoming presentation to leadership next Thursday and requested that the AI never mention their ex, Jordan.

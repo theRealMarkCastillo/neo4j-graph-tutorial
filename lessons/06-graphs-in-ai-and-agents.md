@@ -43,8 +43,9 @@ querying; re-embed when text changes; don't embed things better reached by trave
 > **Rule of thumb:** embeddings find where to start, the graph reasons from there, the LLM
 > explains the result.
 
-## Ideas for next lessons
+## Next
 
-- Agent memory: record facts from conversation with `MERGE` and time-stamped edges, recall later.
-- Graph tools for an agent: `find_experts`, `who_manages`, plus a read-only Cypher tool.
-- Graph embeddings: run `gds.fastRP` and compare with Lesson 5's text similarity.
+- [Lesson 7](07-langgraph-agent-with-graph-tools.md) — a LangGraph agent with graph tools and read-only Cypher.
+- [Lesson 8](08-memory-design-for-companions.md) — memory design for an assistant / companion.
+- [Lesson 9](09-memory-write-path.md) — extracting memories from conversation into the graph.
+- [Lesson 10](10-companion-recall-and-chat.md) — hybrid recall, the LangGraph companion, terminal chat.

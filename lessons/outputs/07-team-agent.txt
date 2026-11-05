@@ -1,0 +1,51 @@
+You: Who could back up Eve if she's out for a month?
+  → person_profile({"name": "Eve"})
+  ← person_profile: {"name": "Eve", "role": "Data Scientist", "bio": "Data scientist training ranking models and running A/B experiments on search quality.", "skills": ["Python (le…
+  → find_experts({"skill": "ML"})
+  → find_experts({"skill": "Python"})
+  ← find_experts: [{"person": "Eve", "level": 5, "active_projects": ["Search Revamp"]}]
+  ← find_experts: [{"person": "Alice", "level": 5, "active_projects": ["Search Revamp"]}, {"person": "Eve", "level": 4, "active_projects": ["Search Revamp"]}, {"person": "Gia", "…
+  → run_cypher({"query": "MATCH (p:Person)-[:HAS_SKILL]->(s:Skill) \nWHERE s.name IN ['ML', 'Machine Learning', 'Data Science'] \nRETURN p.name, s.name"})
+  ← run_cypher: [{"p.name": "Eve", "s.name": "ML"}]
+
+Agent: To determine who could back up Eve, I analyzed her skills and current project. Eve is a **Data Scientist** working on the **Search Revamp** project, with expertise in **ML (level 5)** and **Python (level 4)**.
+
+Based on the available data:
+*   **Alice** is the strongest candidate for backup. She is also working on the **Search Revamp** project and possesses a higher proficiency in **Python (level 5)** than Eve.
+*   **Gia** also has **Python** skills (level 3), though she is not currently assigned to any active projects.
+
+However, Eve appears to be the only person with the **ML** skill listed in the system, making her a single point of failure for the machine learning aspects of the Search Revamp project. Alice is the best overall backup due to her project alignment and Python expertise.
+
+
+You: Which active projects are at risk because only one person has a required skill, and who could we train?
+  → staffing_gaps({})
+  ← staffing_gaps: [{"project": "Search Revamp", "skill": "ML", "who": ["Eve"]}, {"project": "Mobile App", "skill": "UX", "who": ["Bob"]}]
+  → find_experts({"skill": "ML"})
+  → find_experts({"skill": "UX"})
+  ← find_experts: [{"person": "Eve", "level": 5, "active_projects": ["Search Revamp"]}]
+  ← find_experts: [{"person": "Bob", "level": 5, "active_projects": ["Mobile App"]}]
+  → run_cypher({"query": "MATCH (p:Person)-[:HAS_SKILL]->(s:Skill) \nWHERE s.name IN ['ML', 'UX'] \nRETURN p.name, s.name, p.description"})
+  ← run_cypher: [{"p.name": "Eve", "s.name": "ML", "p.description": "Data scientist training ranking models and running A/B experiments on search quality."}, {"p.name": "Bob", …
+  → run_cypher({"query": "MATCH (p:Person) \nWHERE NOT (p)-[:HAS_SKILL]->(:Skill {name: 'ML'}) \nAND NOT (p)-[:HAS_SKILL]->(:Skill {name: 'UX'})\nRETURN p.name, p.description LIMIT 10"})
+  ← run_cypher: [{"p.name": "Alice", "p.description": "Backend engineer who loves distributed systems and Python, and mentors juniors on testing."}, {"p.name": "Cara", "p.descr…
+
+Agent: The following active projects are at risk due to single points of failure:
+
+*   **Search Revamp**: Only **Eve** possesses the required **ML** skill.
+*   **Mobile App**: Only **Bob** possesses the required **UX** skill.
+
+**Training Recommendations:**
+*   **For ML (Search Revamp):** **Alice** would be a strong candidate for training, as she is a backend engineer proficient in Python, which is commonly used for ML.
+*   **For UX (Mobile App):** **Cara** is the ideal candidate for training, as she is a frontend engineer already building React Native components and a shared design system, which aligns closely with UX implementation.
+
+
+You: How many people does Dev manage, and what are their roles?
+  → run_cypher({"query": "MATCH (m:Person {name: 'Dev'})-[:MANAGES]->(e:Person)\nOPTIONAL MATCH (e)-[:HAS_ROLE]->(r:Role)\nRETURN e.name AS employee, r.name AS role"})
+  ← run_cypher: [{"employee": "Finn", "role": "Senior Engineer"}, {"employee": "Cara", "role": "Engineer"}, {"employee": "Alice", "role": "Engineer"}]
+
+Agent: Dev manages 3 people:
+* **Finn**: Senior Engineer
+* **Cara**: Engineer
+* **Alice**: Engineer
+
+

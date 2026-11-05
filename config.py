@@ -11,9 +11,36 @@ NEO4J_AUTH = (os.getenv("NEO4J_USER", "neo4j"), os.environ["NEO4J_PASSWORD"])
 
 # Local embedding model (no API key needed). 384-dimensional vectors.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+EMBED_DIMS = 384
 
-# Optional LLM settings. The anthropic SDK reads ANTHROPIC_API_KEY from the environment itself;
-# an empty value in .env is treated as "not set".
+# Optional Anthropic settings (Lesson 5's graphrag.py). The SDK reads ANTHROPIC_API_KEY
+# from the environment itself; an empty value in .env is treated as "not set".
 if not os.getenv("ANTHROPIC_API_KEY"):
     os.environ.pop("ANTHROPIC_API_KEY", None)
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
+
+# OpenAI-compatible chat endpoint (Lessons 7-10).
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").strip() or None
+LLM_MODEL = os.getenv("LLM_MODEL", "").strip()
+LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip() or "not-needed"  # local servers ignore it
+LLM_EXTRACTION_MODEL = os.getenv("LLM_EXTRACTION_MODEL", "").strip() or LLM_MODEL
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+
+COMPANION_USER = os.getenv("COMPANION_USER", "Alex")
+COMPANION_NAME = os.getenv("COMPANION_NAME", "Sage")
+
+
+def chat_model(model: str | None = None, temperature: float | None = None):
+    """A LangChain chat model pointed at the OpenAI-compatible endpoint in .env."""
+    from langchain_openai import ChatOpenAI
+
+    if not (model or LLM_MODEL):
+        raise SystemExit("Set LLM_MODEL (and LLM_BASE_URL / LLM_API_KEY) in .env first.")
+    return ChatOpenAI(
+        base_url=LLM_BASE_URL,
+        api_key=LLM_API_KEY,
+        model=model or LLM_MODEL,
+        temperature=LLM_TEMPERATURE if temperature is None else temperature,
+        timeout=120,
+        max_retries=2,
+    )
