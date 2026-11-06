@@ -90,6 +90,35 @@ def test_plans_get_an_open_status(store):
     assert m == {"s": "open", "due": "2026-11-09"}
 
 
+
+def test_a_plan_the_same_extraction_restates_stays_open(store):
+    # Seen in MLflow traces (gemini-3.5-flash-lite): the episode pass re-stated the dentist plan
+    # AND listed it as completed. Saying it is still on wins over the contradiction.
+    store.apply(Extraction(memories=[mem("Dentist appointment on 2026-11-17", "plan", due_on="2026-11-17")]), today=T)
+    [plan] = store.memories(kind="plan")
+    for restated in (mem("Dentist appointment on 2026-11-17", "plan", due_on="2026-11-17"),
+                     mem("Dentist appointment on 2026-11-17", "plan", due_on="2026-11-17", supersedes=[plan["id"]])):
+        log = store.apply(Extraction(memories=[restated], completed_plans=[plan["id"]]), today=T)
+        assert f"plan done {plan['id']}" not in log
+        assert [m["status"] for m in store.memories(kind="plan")] == ["open"], log
+
+
+def test_a_plan_can_still_be_completed(store):
+    store.apply(Extraction(memories=[mem("Dentist appointment on 2026-11-17", "plan", due_on="2026-11-17")]), today=T)
+    [plan] = store.memories(kind="plan")
+    log = store.apply(Extraction(memories=[mem("Pytest went to the dentist on 2026-11-17", "event",
+                                               occurred_on="2026-11-17")],
+                                 completed_plans=[plan["id"]]), today=T)
+    assert f"plan done {plan['id']}" in log
+
+
+def test_another_plan_on_the_same_day_does_not_block_completion(store):
+    store.apply(Extraction(memories=[mem("Job interview at Acme on 2026-11-17", "plan", due_on="2026-11-17")]), today=T)
+    [plan] = store.memories(kind="plan")
+    log = store.apply(Extraction(memories=[mem("Dentist appointment on 2026-11-17", "plan", due_on="2026-11-17")],
+                                 completed_plans=[plan["id"]]), today=T)
+    assert f"plan done {plan['id']}" in log
+
 def test_forget_entity_removes_memories_and_redacts_turns(store):
     ep = store.start_episode(on=T)
     store.log_turn(ep, "user", "My ex Jordan texted me")

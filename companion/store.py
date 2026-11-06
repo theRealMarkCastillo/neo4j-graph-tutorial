@@ -622,8 +622,25 @@ class MemoryStore:
             ):
                 log.append(f"retired {mid}")
                 retired_pairs.append((mid, None))
+        # A plan the same extraction re-states (replaces it, or repeats it word for word with the
+        # same due date) is still on: smaller models have "completed" a plan that was only moved.
+        restated_ids = sorted({sid for m in ex.memories for sid in m.supersedes})
+        restated = [{"due": d, "text": m.text.strip().lower()} for m in ex.memories
+                    if m.kind == "plan" and (d := _to_date(m.due_on))]
         for mid in ex.completed_plans:
-            if q("MATCH (m:Memory {id: $id, user: $user, kind: 'plan', status: 'open'}) SET m.status = 'done' RETURN m.id", id=mid):
+            [row] = q(
+                """
+                OPTIONAL MATCH (m:Memory {id: $id, user: $user, kind: 'plan', status: 'open'})
+                WITH m, m IS NOT NULL AND (m.id IN $ids OR any(r IN $restated
+                     WHERE r.due = m.due_on AND r.text = toLower(trim(m.text)))) AS restated
+                FOREACH (_ IN CASE WHEN m IS NOT NULL AND NOT restated THEN [1] ELSE [] END |
+                    SET m.status = 'done')
+                RETURN m IS NOT NULL AS found, restated
+                """, id=mid, ids=restated_ids, restated=restated,
+            )
+            if row["restated"]:
+                log.append(f"kept plan {mid} open: the same extraction re-states it")
+            elif row["found"]:
                 log.append(f"plan done {mid}")
 
         vectors = embed([m.text for m in ex.memories]) if ex.memories else []

@@ -15,7 +15,7 @@ import re
 
 import pytest
 
-from companion.extract import extract_memories, summarize_episode
+from companion.extract import extract_episode, extract_memories, summarize_episode
 
 pytestmark = pytest.mark.llm
 TRIALS = int(os.environ.get("EVAL_TRIALS", "1"))
@@ -116,6 +116,25 @@ def test_forget_wins_over_boundary(llm_ready):
         assert "boundary" not in kinds(ex), dump
     trials(check)
 
+
+def test_a_moved_plan_is_not_done(llm_ready):
+    # From an MLflow trace (correction scenario on gemini-3.5-flash-lite, 5 of 5 runs): by the
+    # episode pass the per-turn pass had already replaced Thursday's plan, so the only candidate
+    # was the CORRECTED one, and the model "completed" it as if moving the date cancelled it.
+    # The store now refuses that contradiction (test_09: ..._restates_stays_open), so a failure
+    # here is the model's alone. A rule added to the prompt didn't help flash-lite (9/10 still
+    # failed); gemini-3.8-flash got it right 5/5.
+    transcript = ("Riley: I have a dentist appointment on Thursday.\n"
+                  "(Sage, context only — not a source) Got it, dentist this Thursday.\n"
+                  "Riley: Oh wait, I just checked — it's actually on Tuesday the 17th.\n"
+                  "(Sage, context only — not a source) Good thing you double-checked! Tuesday the 17th it is.")
+    stored = [{"id": "m_1", "kind": "plan", "status": "open",
+               "text": "Riley has a dentist appointment on 2026-11-17"}]
+
+    def check():
+        ex = extract_episode("Riley", transcript, stored, [], today=dt.date(2026, 11, 9))
+        assert "m_1" not in ex.completed_plans, ex.model_dump_json(exclude_defaults=True)
+    trials(check)
 
 def test_diary_summary_leaves_out_forgotten_people(llm_ready):
     transcript = ("Riley: My ex [forgotten] texted me last night.\n"
