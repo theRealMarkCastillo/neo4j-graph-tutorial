@@ -135,7 +135,6 @@ Ollama, LM Studio, vLLM...). Set in `.env`:
 | `LLM_MODEL` | chat model name |
 | `LLM_API_KEY` | key (any value for local servers) |
 | `LLM_EXTRACTION_MODEL` | optional, model for memory extraction (defaults to `LLM_MODEL`) |
-| `LLM_AGENT_MODEL` | optional, model for the Lesson 7 agent (defaults to `LLM_MODEL`). On Gemini use `gemini-2.5-flash`: Gemini 3 models need a `thought_signature` sent back with tool calls, which the OpenAI-compatible client drops |
 | `LLM_TEMPERATURE` | chat temperature |
 | `COMPANION_USER`, `COMPANION_NAME` | default user and companion names |
 

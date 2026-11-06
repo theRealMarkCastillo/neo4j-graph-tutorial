@@ -21,9 +21,12 @@ LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").strip() or None
 LLM_MODEL = os.getenv("LLM_MODEL", "").strip()
 LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip() or "not-needed"  # local servers ignore it
 LLM_EXTRACTION_MODEL = os.getenv("LLM_EXTRACTION_MODEL", "").strip() or LLM_MODEL
-# Lesson 7's tool-calling agent. Gemini 3 models fail its tool loop over the OpenAI-compatible
-# endpoint (they need a thought_signature sent back, which ChatOpenAI drops): use gemini-2.5-flash.
-LLM_AGENT_MODEL = os.getenv("LLM_AGENT_MODEL", "").strip() or LLM_MODEL
+# Lesson 7's tool-calling agent. On Gemini it uses gemini-2.5-flash: Gemini 3 models reject the
+# agent's second step over the OpenAI-compatible endpoint, because each tool call carries a
+# thought_signature that must be sent back and ChatOpenAI drops it. Elsewhere: LLM_MODEL.
+GEMINI_AGENT_MODEL = "gemini-2.5-flash"
+LLM_AGENT_MODEL = (GEMINI_AGENT_MODEL if "generativelanguage.googleapis.com" in (LLM_BASE_URL or "")
+                   else LLM_MODEL)
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
 
 # Lesson 19: the companion's embeddings (Lessons 8-18). Leave EMBED_BASE_URL empty for the local
