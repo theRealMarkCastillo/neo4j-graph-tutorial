@@ -5,7 +5,8 @@ TYPES mean, so the system can normalize and check them, and infer new facts:
 
 - vocabulary   one canonical name per relation, plus synonyms  ("girlfriend" -> partner)
 - hierarchy    SUBTYPE_OF, a DAG                               (sister -> sibling -> family)
-- rules        symmetric, inverse, cardinality, range          (one lives_in at a time; pet -> a pet)
+- rules        symmetric, inverse, cardinality, range,         (one lives_in at a time; pet -> a pet;
+               exclusive                                        likes ends dislikes of the same thing)
 - inference    kinship composition                             (sibling's child -> niece_or_nephew)
 
 Edge direction convention everywhere:  (source)-[:RELATED {type: T}]->(target)
@@ -90,8 +91,9 @@ ONTOLOGY: dict[str, dict] = {
     "from":     {"parents": ["places"], "synonyms": ["hometown", "grew_up_in", "born_in", "is_from"], "range": ["place"]},
 
     # ---- interests
-    "likes":    {"parents": ["interests"], "synonyms": ["enjoys", "loves", "fan_of", "favorite"]},
-    "dislikes": {"parents": ["interests"], "synonyms": ["hates", "avoids"]},
+    "likes":    {"parents": ["interests"], "synonyms": ["enjoys", "loves", "fan_of", "favorite"],
+                 "exclusive": ["dislikes"]},
+    "dislikes": {"parents": ["interests"], "synonyms": ["hates", "avoids"], "exclusive": ["likes"]},
     "practices": {"parents": ["interests"], "synonyms": ["plays", "does", "hobby", "learning", "learns"]},
 }
 
@@ -291,6 +293,7 @@ def ensure_ontology(driver) -> None:
     rows = [{"name": n, "parents": s.get("parents", []), "synonyms": s.get("synonyms", []),
              "symmetric": bool(s.get("symmetric")), "inverse": s.get("inverse"),
              "cardinality": s.get("cardinality", "many"), "range": s.get("range", []),
+             "exclusive": s.get("exclusive", []),
              "group_words": s.get("words")} for n, s in ONTOLOGY.items()]
     driver.execute_query("CREATE CONSTRAINT reltype_name IF NOT EXISTS FOR (t:RelType) REQUIRE t.name IS UNIQUE")
     driver.execute_query(
@@ -298,7 +301,7 @@ def ensure_ontology(driver) -> None:
         UNWIND $rows AS row
         MERGE (t:RelType {name: row.name})
         SET t.synonyms = row.synonyms, t.symmetric = row.symmetric, t.inverse = row.inverse,
-            t.cardinality = row.cardinality, t.range = row.range, t.group_words = row.group_words,
+            t.cardinality = row.cardinality, t.range = row.range, t.exclusive = row.exclusive, t.group_words = row.group_words,
             t.proposed = false
         WITH t, row
         OPTIONAL MATCH (t)-[old:SUBTYPE_OF]->() DELETE old

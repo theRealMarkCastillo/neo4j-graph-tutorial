@@ -283,3 +283,79 @@ def test_an_unrelated_name_from_a_wrong_ref_is_not_kept(store):
     log = store.apply(Extraction(entities=[EntityOut(name="Jordan", kind="person", ref=sam)]), today=T)
     assert log == ["kept Sam: 'Jordan' matched it by id but isn't one of its names (not added as an alias)"]
     assert entities(store)["Sam"]["aliases"] == [] and store._lookup("Jordan", {}) is None
+
+
+# ---- the life graph beyond the user (Logan -likes-> Minecraft)
+
+def links(store):
+    return {(r["a"], r["type"], r["b"]) for r in store._q(
+        "MATCH (a:Entity {user: $user})-[r:RELATED]->(b:Entity) WHERE r.until IS NULL "
+        "RETURN CASE WHEN a:User THEN 'user' ELSE a.name END AS a, r.type AS type, b.name AS b")}
+
+
+def logan_likes_minecraft(store, ep=None):
+    return store.apply(Extraction(
+        entities=[EntityOut(name="Logan", kind="person"), EntityOut(name="Minecraft", kind="thing")],
+        relations=[RelationOut(source="user", target="Logan", type="son"),
+                   RelationOut(source="Logan", target="Minecraft", type="likes")],
+        memories=[mem("Pytest has a son named Logan", about=["user", "Logan"]),
+                  mem("Pytest's son Logan loves Minecraft", "preference", about=["Logan", "Minecraft"])],
+    ), ep, T)
+
+
+def test_a_thing_and_an_activity_with_close_names_are_one_entity(store):
+    a = store.resolve_entity("Minecraft", "thing", summary="a video game")
+    b = store.resolve_entity("Minecraft game", "activity", summary="a video game")
+    assert a == b
+
+
+def test_dislikes_ends_likes_of_the_same_thing(store):
+    logan_likes_minecraft(store)
+    log = store.apply(Extraction(
+        relations=[RelationOut(source="Logan", target="Minecraft", type="dislikes")],
+        memories=[mem("Pytest's son Logan is bored of Minecraft", "preference", about=["Logan", "Minecraft"])],
+    ), None, T)
+    assert ("Logan", "dislikes", "Minecraft") in links(store)
+    assert ("Logan", "likes", "Minecraft") not in links(store), log
+
+
+def test_a_link_ends_when_its_only_memory_is_retired(store):
+    logan_likes_minecraft(store)
+    [like] = [m for m in store.memories() if "Minecraft" in m["text"]]
+    log = store.apply(Extraction(invalidate=[like["id"]]), None, T)
+    assert ("Logan", "likes", "Minecraft") not in links(store), log
+    assert ("user", "son", "Logan") in links(store)  # still backed by its own memory
+
+
+def test_a_link_survives_when_its_memory_is_replaced_by_one_about_the_same_thing(store):
+    logan_likes_minecraft(store)
+    [like] = [m for m in store.memories() if "Minecraft" in m["text"]]
+    store.apply(Extraction(memories=[mem("Pytest's son Logan plays Minecraft every weekend", "preference",
+                                         about=["Logan", "Minecraft"], supersedes=[like["id"]])]), None, T)
+    assert ("Logan", "likes", "Minecraft") in links(store)
+
+
+def test_forgetting_a_memory_ends_the_link_it_alone_supported(store):
+    logan_likes_minecraft(store)
+    [like] = [m for m in store.memories() if "Minecraft" in m["text"]]
+    assert store.forget(like["id"], today=T)
+    assert ("Logan", "likes", "Minecraft") not in links(store)
+
+
+def test_consolidate_drops_entities_nothing_points_at(store):
+    logan_likes_minecraft(store)
+    store.resolve_entity("Disney+", "organization")  # named, never linked or remembered
+    log = store.consolidate(today=T)
+    names = {r["n"] for r in store._q("MATCH (e:Entity {user: $user}) WHERE NOT e:User RETURN e.name AS n")}
+    assert names == {"Logan", "Minecraft"}, log
+
+
+def test_a_repeated_memory_gains_the_entities_it_names(store):
+    """A re-read under new rules says the same memory again, about more entities."""
+    store.apply(Extraction(entities=[EntityOut(name="Logan", kind="person")],
+                           memories=[mem("Pytest's son Logan loves Minecraft", "preference", about=["Logan"])]), None, T)
+    store.apply(Extraction(entities=[EntityOut(name="Logan", kind="person"), EntityOut(name="Minecraft", kind="thing")],
+                           memories=[mem("Pytest's son Logan loves Minecraft", "preference",
+                                         about=["Logan", "Minecraft"])]), None, T)
+    [m] = store.memories()
+    assert sorted(m["about"]) == ["Logan", "Minecraft"]

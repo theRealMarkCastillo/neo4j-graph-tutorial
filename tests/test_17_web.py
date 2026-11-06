@@ -98,3 +98,16 @@ def test_the_api_shows_only_what_the_persona_may_see(client, store):
     client.post("/api/session", json={"user": "pytest", "persona": "Coach"})
     texts = [m["text"] for m in client.get("/api/memories").json()["memories"]]
     assert not any("panic" in t for t in texts)
+
+
+def test_the_graph_shows_what_it_knows_and_links_co_mentioned_entities(client, store):
+    store.apply(Extraction(
+        entities=[EntityOut(name="Logan", kind="person"), EntityOut(name="Disney+", kind="organization")],
+        memories=[MemoryOut(text="Pytest's son Logan watches Disney+ on his tablet", kind="preference",
+                            importance=5, about=["Logan", "Disney+"])]), today=D1)
+    client.post("/api/session", json={"user": "pytest"})
+    graph = client.get("/api/graph").json()
+    by_name = {n["name"]: n for n in graph["nodes"]}
+    assert "Pytest's son Logan watches Disney+ on his tablet" in by_name["Logan"]["texts"]
+    ids = {by_name["Logan"]["id"], by_name["Disney+"]["id"]}
+    assert any(e.get("mention") and {e["source"], e["target"]} == ids for e in graph["edges"])

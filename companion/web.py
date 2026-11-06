@@ -231,7 +231,13 @@ def create_app(driver, today: dt.date | None = None) -> FastAPI:
               AND NOT EXISTS { MATCH (b:Memory {kind: 'boundary'})-[:ABOUT]->(e)
                                WHERE b.invalidated_at IS NULL AND NOT e:User })
             RETURN e.id AS id, e.name AS name, e.kind AS kind, coalesce(e.summary, '') AS summary,
-                   COUNT { (e)<-[:ABOUT]-(m:Memory) WHERE m.invalidated_at IS NULL AND """ + visible("m") + """ } AS memories
+                   COUNT { (e)<-[:ABOUT]-(m:Memory) WHERE m.invalidated_at IS NULL AND """ + visible("m") + """ } AS memories,
+                   // what it knows about this node, shown on hover (the user's own list is the
+                   // whole profile: too long for a tooltip)
+                   CASE WHEN e:User THEN [] ELSE COLLECT {
+                     MATCH (e)<-[:ABOUT]-(m:Memory) WHERE m.invalidated_at IS NULL AND NOT coalesce(m.sensitive, false)
+                       AND """ + visible("m") + """
+                     RETURN m.text ORDER BY m.importance DESC, m.created_at DESC LIMIT 6 } END AS texts
             """)
         ids = [n["id"] for n in nodes]
         edges = store._q(
@@ -240,6 +246,17 @@ def create_app(driver, today: dt.date | None = None) -> FastAPI:
               AND r.until IS NULL AND """ + visible("r") + """
             RETURN a.id AS source, b.id AS target, r.type AS type,
                    coalesce(r.private, false) AS private, r.agent AS agent
+            """, ids=ids)
+        # Entities a memory names together but no relation links ("Logan likes Disney+" with
+        # no edge yet): drawn faint, so nothing the companion knows about floats alone.
+        edges += store._q(
+            """
+            MATCH (a:Entity)<-[:ABOUT]-(m:Memory)-[:ABOUT]->(b:Entity)
+            WHERE a.id IN $ids AND b.id IN $ids AND a.id < b.id AND NOT a:User AND NOT b:User
+              AND m.invalidated_at IS NULL AND """ + visible("m") + """
+              AND NOT EXISTS { (a)-[r:RELATED]-(b) WHERE r.until IS NULL }
+            RETURN DISTINCT a.id AS source, b.id AS target, 'mentioned with' AS type,
+                   false AS private, null AS agent, true AS mention
             """, ids=ids)
         return {"persona": store.agent, "nodes": nodes, "edges": edges}
 

@@ -321,7 +321,7 @@ class MemoryStore:
         1. `ref` — the extractor pointed at a known entity id
         2. `new` — the extractor says it's a different entity with a known name (a second Sam)
         3. exact name/alias; if several share the name, the one whose summary is most similar
-        4. embedding similarity (same kind) above ENTITY_MATCH_SCORE
+        4. embedding similarity (same or compatible kind) above ENTITY_MATCH_SCORE
         5. otherwise create it
 
         Then, for a known entity (each change is logged in self.entity_log):
@@ -353,10 +353,10 @@ class MemoryStore:
             candidates = self._q(
                 """
                 CALL db.index.vector.queryNodes($entity_vec, 50, $vec) YIELD node, score
-                WHERE node.user = $user AND node.kind = $kind AND score >= $min
+                WHERE node.user = $user AND node.kind IN $kinds AND score >= $min
                 RETURN node.id AS id, [node.name] + coalesce(node.aliases, []) AS names ORDER BY score DESC
                 """,
-                vec=vec, kind=kind, min=ENTITY_MATCH_SCORE,
+                vec=vec, kinds=_compatible_kinds(kind), min=ENTITY_MATCH_SCORE,
             )
             hit = [c for c in candidates if _name_similarity([name, *aliases], c["names"]) >= NAME_MATCH_MIN][:1]
         if not hit:  # a new entity: nothing to reconcile
@@ -530,6 +530,7 @@ class MemoryStore:
         private_names = {n.lower() for m in ex.memories if self._private(m) for n in m.about}
         shared_names = {n.lower() for m in ex.memories if not self._private(m) for n in m.about}
         linking = {(a, b, canon) for rel, a, b, canon, _ in resolved if not rel.ended}
+        linked: list[tuple[str, str, str]] = []  # edges this extraction (re)asserts: evidence below
         for rel, a, b, canon, how in resolved:
             if rel.ended and (a, b, canon) in linking:
                 continue  # "ended X" + "linked X" in one go: keep it linked
@@ -571,6 +572,15 @@ class MemoryStore:
             if how == "new":
                 hint = ontology.propose_type(self.driver, canon, f"{src} -{rel.type}-> {dst}")
                 log.append(f"new relation type '{canon}' proposed for the ontology (closest: {hint})")
+            for x in q(  # likes <-> dislikes: the new one ends the opposite edge to the same target
+                """
+                MATCH (a:Entity {id: $a})-[r:RELATED]->(b:Entity {id: $b})
+                WHERE r.until IS NULL AND r.type IN $types
+                SET r.until = $today RETURN r.type AS type
+                """,
+                a=a, b=b, types=ontology.rule(canon, "exclusive") or [], today=today,
+            ):
+                log.append(f"ended {src} -{x['type']}-> {dst} (now {canon})")
             if ontology.rule(canon, "cardinality") == "one":  # e.g. one lives_in at a time
                 moved = q(
                     """
@@ -595,9 +605,12 @@ class MemoryStore:
                 a=a, b=b, type=canon, since=rel.since, now=now, said_as=rel.type,
                 private=rel.target.lower() in private_names and rel.target.lower() not in shared_names,
             )[0]["changed"]
+            linked.append((a, b, canon))
             if changed:  # only log new or re-activated links
                 log.append(f"linked {src} -{canon}-> {dst}{said}")
 
+        evidence: list[tuple[str, set[str]]] = []  # (memory id, entity ids it is about)
+        retired_pairs: list[tuple[str, str | None]] = []  # (retired memory, its replacement)
         for mid in ex.invalidate:
             if q(
                 """
@@ -606,6 +619,7 @@ class MemoryStore:
                 """, id=mid, now=now,
             ):
                 log.append(f"retired {mid}")
+                retired_pairs.append((mid, None))
         for mid in ex.completed_plans:
             if q("MATCH (m:Memory {id: $id, user: $user, kind: 'plan', status: 'open'}) SET m.status = 'done' RETURN m.id", id=mid):
                 log.append(f"plan done {mid}")
@@ -653,9 +667,14 @@ class MemoryStore:
                     """,
                     id=dup[0]["id"], imp=mem.importance, until=until,
                 )
+                # ...and is about every entity it names now, not only those named before (a
+                # re-read under new rules: "Logan loves Minecraft" gains Minecraft)
+                q("MATCH (m:Memory {id: $id}) UNWIND $about AS eid MATCH (e:Entity {id: eid}) MERGE (m)-[:ABOUT]->(e)",
+                  id=dup[0]["id"], about=[eid for n in mem.about if (eid := self._lookup(n, known))])
                 log.append(f"reinforced {dup[0]['id']} \"{dup[0]['text']}\" "
                            f"(similarity {dup[0]['score']:.3f} ≥ {DUPLICATE_SCORE})")
                 self.written_ids.append(dup[0]["id"])
+                evidence.append((dup[0]["id"], {eid for n in (mem.about or ["user"]) if (eid := self._lookup(n, known))}))
                 # The near-copy may still be a correction ("brother is Leo" superseding "...Theo"):
                 # retire what it replaces, or the wrong memory stays current.
                 for old in q(
@@ -667,6 +686,7 @@ class MemoryStore:
                     keep=dup[0]["id"], ids=mem.supersedes, now=now,
                 ):
                     log.append(f"retired {old['id']} (replaced by {dup[0]['id']})")
+                    retired_pairs.append((old["id"], dup[0]["id"]))
                 continue
 
             mid = _new_id("m")
@@ -700,6 +720,8 @@ class MemoryStore:
                 private=self._private(mem),
                 vec=vec, about=about, ep=episode_id or "", supersedes=mem.supersedes, now=now,
             )[0]["retired"]
+            evidence.append((mid, set(about)))
+            retired_pairs += [(old, mid) for old in retired]
             flags = (" (sensitive)" if mem.sensitive else "") + (f" (yearly {mem.annual_date})" if _annual(mem.annual_date) else "")
             if until:
                 flags += f" (until {until:%Y-%m-%d %H:%M})"
@@ -709,12 +731,49 @@ class MemoryStore:
                    else "  [new: nothing similar with the same dates]")
             log.append(f"+ [{mem.kind}] {mem.text}{flags}" + (f"  (replaces {', '.join(retired)})" if retired else "") + why)
 
+        # Provenance: each edge lists the memories that support it, those about BOTH its ends
+        # ("Maya also lives in Boston" is no evidence for the user's own lives_in Boston). When
+        # they are all retired with no heir, the edge ends with them.
+        for a, b, canon in linked:
+            ids = [mid for mid, ab in evidence if {a, b} <= ab]
+            if ids:
+                q("""
+                  MATCH (:Entity {id: $a})-[r:RELATED {type: $type}]->(:Entity {id: $b})
+                  SET r.evidence = apoc.coll.toSet(coalesce(r.evidence, []) + $ids)
+                  """, a=a, b=b, type=canon, ids=ids)
+        log += self._retire_links(retired_pairs, today, skip=linked)
+
         for name in ex.forget_entities:  # last, so memories made this turn about them go too
             gone = self.forget_entity(name, known)
             if gone:
                 self.forgotten_terms += gone["terms"]
                 log.append(f"forgot {gone['name']}: {gone['memories']} memories deleted, "
                            f"{gone['turns']} turns and {gone['episodes']} summaries redacted")
+        return log
+
+    def _retire_links(self, pairs: list[tuple[str, str | None]], today: dt.date,
+                      skip=()) -> list[str]:
+        """A memory left the graph (`old`, maybe replaced by `new`). Edges it supported pass the
+        support on to `new` if `new` is about both their ends; an edge left with no support
+        ends (kept as history). Edges from before provenance (no `evidence`) are never touched,
+        nor edges this same extraction asserted (`skip`)."""
+        log = []
+        for old, new in pairs:
+            for e in self._q(
+                """
+                MATCH (a:Entity)-[r:RELATED]->(b:Entity)
+                WHERE r.until IS NULL AND $old IN coalesce(r.evidence, [])
+                  AND NOT a.id + '|' + b.id + '|' + r.type IN $skip
+                OPTIONAL MATCH (n:Memory {id: $new}) WHERE EXISTS { (n)-[:ABOUT]->(a) } AND EXISTS { (n)-[:ABOUT]->(b) }
+                WITH a, r, b, n.id AS heir
+                SET r.evidence = [i IN r.evidence WHERE i <> $old] + CASE WHEN heir IS NULL THEN [] ELSE [heir] END
+                WITH a, r, b WHERE size(r.evidence) = 0
+                SET r.until = $today
+                RETURN CASE WHEN a:User THEN 'user' ELSE a.name END AS a, r.type AS type, b.name AS b
+                """,
+                old=old, new=new, today=today, skip=[f"{a}|{b}|{t}" for a, b, t in skip],
+            ):
+                log.append(f"ended {e['a']} -{e['type']}-> {e['b']} (its only memory was retired)")
         return log
 
     # ------------------------------------------------------------------ read path
@@ -905,7 +964,24 @@ class MemoryStore:
             WITH e, head(collect(r.type)) AS relation,
                  collect(DISTINCT m {.id, .kind, .text, .importance,
                                      age: duration.inSeconds(coalesce(m.last_confirmed, m.created_at), $now).seconds / 86400.0})[..20] AS memories
-            RETURN e.id AS id, e.name AS name, e.kind AS kind, e.summary AS summary, relation, memories
+            // Its links to other entities, both directions and up to two steps (Logan -likes->
+            // Minecraft is found from either end; "my son's friend Max" -> Max's dog), each end
+            // labelled with its relation to the user if it has one. Never through the user, a
+            // protected entity or a link this persona can't see.
+            WITH e, relation, memories, COLLECT {
+              MATCH p = (e)-[:RELATED*1..2]-(o:Entity)
+              WHERE all(x IN nodes(p)[1..] WHERE NOT x:User AND """ + entity_visible("x") + """
+                        AND NOT EXISTS { MATCH (b2:Memory {kind: 'boundary'})-[:ABOUT]->(x)
+                                         WHERE b2.invalidated_at IS NULL AND (b2.valid_until IS NULL OR b2.valid_until > $now) })
+                AND all(r2 IN relationships(p) WHERE r2.until IS NULL AND """ + visible("r2") + """)
+              UNWIND relationships(p) AS r2
+              WITH DISTINCT r2, startNode(r2) AS s, endNode(r2) AS t
+              RETURN {source: s.name, type: r2.type, target: t.name,
+                      source_rel: COLLECT { MATCH (:User {id: $user})-[u:RELATED]->(s) WHERE u.until IS NULL AND """ + visible("u") + """ RETURN u.type }[0],
+                      target_rel: COLLECT { MATCH (:User {id: $user})-[u:RELATED]->(t) WHERE u.until IS NULL AND """ + visible("u") + """ RETURN u.type }[0]}
+              LIMIT 15
+            } AS links
+            RETURN e.id AS id, e.name AS name, e.kind AS kind, e.summary AS summary, relation, memories, links
             LIMIT 12
             """,
             q=query, vec=vec, hop=ENTITY_HOP_SCORE, types=group_types, inferred=inferred_ids,
@@ -997,6 +1073,7 @@ class MemoryStore:
         3. prune   delete dormant, low-importance statuses and feelings (data minimization),
                    but only once they're rolled up or older than the pattern window: pruning
                    earlier would delete the repeats before they could ever form a pattern
+        4. orphans entities with no memory and no link left are deleted (see _drop_orphans)
 
         Everything else is kept: events stay as history even when dormant."""
         today = today or dt.date.today()
@@ -1029,7 +1106,22 @@ class MemoryStore:
                 log += self._write(lambda: self._store_pattern(pattern, group, today, now))
         if prune:
             log += self._prune(now)
+        log += self._drop_orphans()
         return log
+
+    def _drop_orphans(self) -> list[str]:
+        """4. orphans  an entity nothing points at any more — no memory (current or retired)
+        is about it and it has no link, past or present — is left over from a forget, a prune
+        or an extraction that named it without saying how it connects ("Disney+"). It would
+        float alone in the life graph and be matched by recall for nothing, so it goes."""
+        gone = self._q(
+            """
+            MATCH (e:Entity {user: $user}) WHERE NOT e:User
+              AND NOT EXISTS { (e)<-[:ABOUT]-(:Memory) } AND NOT EXISTS { (e)-[:RELATED]-() }
+            WITH e, e.name AS name DETACH DELETE e RETURN name
+            """
+        )
+        return [f"dropped {len(gone)} unconnected entities: {', '.join(sorted(g['name'] for g in gone))}"] if gone else []
 
     def _store_pattern(self, pattern, group: list[dict], today: dt.date, now: dt.datetime) -> list[str]:
         """The pattern and its SUMMARIZES links commit together (the LLM call happened before
@@ -1110,13 +1202,13 @@ class MemoryStore:
             id=memory_id,
         )
 
-    def forget(self, memory_id: str) -> bool:
+    def forget(self, memory_id: str, today: dt.date | None = None) -> bool:
         """User-requested forgetting: hard delete (privacy beats provenance here).
 
         The turns that produced it are still in this episode's transcript, and the
         end-of-episode pass would extract it again. So a tombstone keeps only its embedding
         (no text), scoped to that episode, and apply() skips anything that matches it."""
-        return bool(self._q(
+        deleted = bool(self._q(
             """
             MATCH (m:Memory {id: $id, user: $user})
             OPTIONAL MATCH (m)-[:FROM]->(ep:Episode)
@@ -1128,6 +1220,9 @@ class MemoryStore:
             """,
             id=memory_id,
         ))
+        if deleted:  # edges it alone supported go with it
+            self._retire_links([(memory_id, None)], today or dt.date.today())
+        return deleted
 
     def _tombstones(self, episode_id: str | None) -> list:
         if not episode_id:
@@ -1227,6 +1322,27 @@ SENSITIVE_NOTE = " (sensitive: only discuss if they raise it)"
 STALE_NOTE = " (not confirmed in over a year: may be out of date, check before relying on it)"
 
 
+# The extractor calls Minecraft a "thing" one turn and an "activity" the next: for matching,
+# those two are one kind, or the graph grows a second Minecraft.
+_KIND_GROUPS = [{"thing", "activity"}]
+
+
+def _compatible_kinds(kind: str) -> list[str]:
+    return sorted(next((g for g in _KIND_GROUPS if kind in g), {kind}))
+
+
+def _link_line(l: dict) -> str:
+    """An edge between two entities, readable. Role edges read "target is source's role"
+    (Max is Logan (your son)'s friend); verb-like ones (likes, lives_in, works_at) read
+    straight through (Logan (your son) likes Minecraft)."""
+    side = lambda name, rel: f"{name} (your {rel.replace('_', ' ')})" if rel else name
+    src, dst = side(l["source"], l.get("source_rel")), side(l["target"], l.get("target_rel"))
+    t = l["type"]
+    if "_" in t or "interests" in ontology.ancestors(t):
+        return f"{src} {t.replace('_', ' ')} {dst}"
+    return f"{dst} is {src}'s {t}"
+
+
 def format_context(r: dict, today: dt.date | None = None) -> str:
     """Render a recall() result as the memory block placed in the system prompt."""
     today = today or dt.date.today()
@@ -1257,6 +1373,9 @@ def format_context(r: dict, today: dt.date | None = None) -> str:
         out.append("Relevant memories:\n" + "\n".join(
             f"- [{m['kind']}] {m['text']}" + (SENSITIVE_NOTE if m.get("sensitive") else "")
             + (STALE_NOTE if m.get("stale") else "") for m in relevant))
+    links = list(dict.fromkeys(_link_line(l) for e in r["entities"] for l in e.get("links", [])))
+    if links:
+        out.append("How they connect:\n" + "\n".join(f"- {l}" for l in links))
     if r.get("recent"):
         out.append("Recently, no longer true (you could ask how it went):\n" + "\n".join(
             f"- until {m['until'].to_native():%Y-%m-%d %H:%M}: {m['text']}"

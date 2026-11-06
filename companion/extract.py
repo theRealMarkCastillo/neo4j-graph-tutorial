@@ -70,7 +70,11 @@ Rules:
    2026-11-20") AND a new current fact ("lives in Chicago") that supersedes the old fact.
 9. If an open plan has now happened or was cancelled, put its id in `completed_plans` (and add an
    `event` memory describing the outcome if one was shared).
-10. Entities: people, pets, places and organizations go in `entities`. For a KNOWN entity set
+10. Entities: people, pets, places and organizations go in `entities`. So do NAMED things
+   someone likes, dislikes, owns or does — a game, show, film, band, book, brand, product or
+   hobby ("Minecraft", "Moana", "Lego", "chess") — as kind thing or activity, each with the
+   relation in rule 11. Not generic phrases ("playing in the rain", "a movie", "whiskey" as a
+   drink habit): those stay in the memory text only. For a KNOWN entity set
    `ref` to its id. Someone who shares a name with a known entity but is clearly different
    (coworker Sam vs cousin Sam): new=true plus a distinguishing summary. Unnamed people get a
    role name ("Mom", "Riley's boss"). When {user} later gives a role-named entity its real name ("his
@@ -80,8 +84,9 @@ Rules:
    name, `ref` to the known id and corrected=true. If a role-named known entity turns out to
    be a named one ("Riley's sister" is Maya), output the named one with `ref` and the role
    name in `aliases`: the two are merged. Use the most specific kind (a company is an
-   organization, not a thing). In `about`, `source` and `target` use the known id when
-   two entities share a name.
+   organization, not a thing). A memory's `about` lists EVERY entity it names, not only
+   the main one: "Ana loves Minecraft" is about [Ana, Minecraft]. In `about`, `source` and
+   `target` use the known id when two entities share a name.
 11. Relations: links to {user} or between entities. Direction: source -type-> target means
    "target is source's <type>": user -sister-> Maya (Maya is {user}'s sister);
    Leo -daughter-> Ana (Ana is Leo's daughter). Use 'user' as the source for {user}.
@@ -91,8 +96,11 @@ Rules:
    lives_in is home. A trip, visit or stay ("in Denver for the week") is a status with
    valid_until, never lives_in (that would end their real home).
    Keep the graph in sync with the text: where {user} lives, works or studies, and who their
-   partner, family or pets are, also need the relation. When a relationship ENDS (breakup,
-   moved away, left a job), add it with ended=true, plus the new one if there is one.
+   partner, family or pets are, also need the relation. So do likes, dislikes and hobbies
+   of {user} or of the people in their life, with that person as the source: "my son Leo
+   loves Minecraft" -> Leo -likes-> Minecraft, not user -likes-> Minecraft. When a relationship ENDS (breakup,
+   moved away, left a job) or a like stops ("Ana's over Minecraft now"), add it with
+   ended=true, plus the new one if there is one.
 12. importance: 9-10 core identity or major life events, 6-8 meaningful, 3-5 useful detail,
    1-2 trivia. If nothing is worth remembering, return empty lists. Never invent details.
 
@@ -103,6 +111,10 @@ Examples (today 2026-11-20, {user} = Riley, existing memory m_1: "Riley lives in
 - "Dana and I broke up. Please don't bring her up." -> relations: user -partner-> Dana
   ended=true, user -ex-> Dana; memories: [event] "Riley and Dana broke up in November 2026";
   [boundary] "Riley doesn't want to talk about Dana" about [Dana], importance 9.
+- "My daughter Ana is obsessed with Minecraft and loves the rain" -> entities: Ana (person),
+  Minecraft (thing); relations: user -daughter-> Ana, Ana -likes-> Minecraft; memories:
+  [preference] "Riley's daughter Ana loves Minecraft" about [Ana, Minecraft]; [preference] "Riley's daughter Ana
+  loves the rain" (no entity for the rain: it is not a named thing).
 - "Where did I live before?" -> nothing new: empty lists.
 - (at 2026-11-20 18:00) "Off to the gym!" -> [status] "Riley is at the gym" valid_until
   "2026-11-20T20:00", importance 2.
@@ -142,6 +154,22 @@ Only {user}'s own lines are a source of facts. The companion's lines often repea
 already remembers (including old, replaced facts) — never record those. If {user}'s lines only
 ask questions or chat, return empty lists.
 It is now {today}.
+
+""" + RULES
+
+REFRESH_SYSTEM = """\
+You maintain the long-term biographical memory of an AI companion for {user}.
+Below is an OLD conversation. Its memories were extracted long ago (they are in the existing
+memories list), under older rules. The rules below have changed since. Your job is to bring
+the GRAPH up to date with them:
+- output every entity and relation the conversation supports under the current rules, even
+  when the fact itself is already stored as a memory (e.g. "{user}'s son Leo loves Minecraft"
+  is stored, but there is no Minecraft entity and no Leo -likes-> Minecraft relation yet);
+- re-output an existing memory with its exact text when its `about` should list more
+  entities than before (it is matched to the stored one, not duplicated);
+- add a memory only if it is genuinely missing. Never invent; returning empty lists is fine.
+Only {user}'s own lines are a source of facts, never the companion's.
+It was then {today}.
 
 """ + RULES
 
@@ -231,12 +259,14 @@ def extract_memories(user: str, user_msg: str, assistant_msg: str, candidates: l
 
 
 def extract_episode(user: str, transcript: str, candidates: list[dict], entities: list[str],
-                    today: dt.date | None = None) -> Extraction:
-    """End-of-episode pass over the whole transcript."""
+                    today: dt.date | None = None, refresh: bool = False) -> Extraction:
+    """End-of-episode pass over the whole transcript. `refresh`: an old transcript read
+    again after the rules changed (companion.reextract): fill in the graph, not the memories."""
     if not transcript.strip():
         return Extraction()
     today = today or dt.date.today()
-    return _run(_system(EPISODE_SYSTEM, user, candidates, entities, today), transcript)
+    return _run(_system(REFRESH_SYSTEM if refresh else EPISODE_SYSTEM, user, candidates, entities, today),
+                transcript)
 
 
 def summarize_episode(user: str, transcript: str, today: dt.date | None = None) -> EpisodeSummary | None:

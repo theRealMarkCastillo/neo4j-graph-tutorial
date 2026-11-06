@@ -135,3 +135,43 @@ def test_protected_person_does_not_leak_through_history_or_entity_hop(store):
         m("Don't bring up Dana", "boundary", about=["Dana"], importance=9)]), today=T)
     block = format_context(store.recall("am I single? how is Maya?", today=T), today=T)
     assert "Dana" not in block.replace("Don't bring up Dana", "")
+
+
+def test_entity_hop_follows_links_between_entities_from_either_end(store):
+    """user -son-> Logan -likes-> Minecraft: asking about Minecraft must reach "your son
+    Logan", and asking about Logan must reach Minecraft (a two-hop life graph)."""
+    store.apply(Extraction(
+        entities=[EntityOut(name="Logan", kind="person"), EntityOut(name="Minecraft", kind="thing")],
+        relations=[RelationOut(source="user", target="Logan", type="son"),
+                   RelationOut(source="Logan", target="Minecraft", type="likes")],
+        memories=[m("Pytest's son Logan is 7 years old", about=["Logan"])],
+    ), today=T)
+    for question in ("does anyone here play Minecraft?", "what should I get Logan?"):
+        block = format_context(store.recall(question, today=T, touch=False), T)
+        assert "Logan (your son) likes Minecraft" in block, block
+
+
+def test_a_protected_entity_is_not_reached_through_a_link(store):
+    store.apply(Extraction(
+        entities=[EntityOut(name="Logan", kind="person"), EntityOut(name="Dana", kind="person")],
+        relations=[RelationOut(source="user", target="Logan", type="son"),
+                   RelationOut(source="Logan", target="Dana", type="mother")],
+        memories=[m("Pytest doesn't want to talk about Dana", "boundary", about=["Dana"], importance=9)],
+    ), today=T)
+    r = store.recall("how is Logan?", today=T, touch=False)
+    links = [l for e in r["entities"] for l in e["links"]]
+    assert "Logan" in [e["name"] for e in r["entities"]]
+    assert all("Dana" not in (l["source"], l["target"]) for l in links), links
+
+
+def test_entity_hop_reaches_two_steps_out(store):
+    store.apply(Extraction(
+        entities=[EntityOut(name="Logan", kind="person"), EntityOut(name="Max", kind="person"),
+                  EntityOut(name="Biscuit", kind="pet")],
+        relations=[RelationOut(source="user", target="Logan", type="son"),
+                   RelationOut(source="Logan", target="Max", type="friend"),
+                   RelationOut(source="Max", target="Biscuit", type="pet")],
+        memories=[m("Pytest's son Logan is 7 years old", about=["Logan"])],
+    ), today=T)
+    block = format_context(store.recall("how is Logan doing?", today=T, touch=False), T)
+    assert "Max is Logan (your son)'s friend" in block and "Biscuit is Max's pet" in block, block

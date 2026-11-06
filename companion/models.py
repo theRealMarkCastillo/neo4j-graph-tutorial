@@ -28,7 +28,7 @@ class RelationOut(BaseModel):
 class MemoryOut(BaseModel):
     text: str = Field(description="Standalone third-person sentence using names, e.g. 'Riley's sister Maya lives in Denver'")
     kind: MemoryKind
-    about: list[str] = Field(default_factory=list, description="'user' and/or entity names or ids it concerns")
+    about: list[str] = Field(default_factory=list, description="'user' and/or EVERY entity (name or id) it names, e.g. ['Ana', 'Minecraft']")
     importance: int = Field(ge=1, le=10, description="1 trivia ... 10 core identity / major life event")
     occurred_on: str | None = Field(default=None, description="ISO date an event happened, only if the day is known (else null)")
     due_on: str | None = Field(default=None, description="ISO date a plan (anything in the future) is due")

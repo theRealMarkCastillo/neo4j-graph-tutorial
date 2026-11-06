@@ -245,20 +245,30 @@ def greeting(store: MemoryStore, today: dt.date) -> str:
     return chat_model().invoke([SystemMessage(system), HumanMessage(prompt)]).content
 
 
+def episode_pass(store: MemoryStore, episode_id: str, today: dt.date, apply: bool = True,
+                 refresh: bool = False):
+    """The second extraction over a whole transcript. Also how old conversations are read
+    again after the extraction rules change (companion.reextract). Returns log lines, or
+    with apply=False the Extraction itself (None if there is too little to read)."""
+    turns = store.episode_turns(episode_id)
+    if sum(t["role"] == store.user_name for t in turns) < (1 if refresh else 2):  # cross-turn facts need 2+ user messages
+        return [] if apply else None
+    labeled = "\n".join(line(store.user_name, t["role"], t["text"]) for t in turns)
+    extraction = extract_episode(
+        store.user_name, labeled,
+        candidates=store.extraction_candidates(labeled[-2000:], k=15, episode_id=episode_id, today=today),
+        entities=store.known_entities(), today=today, refresh=refresh,
+    )
+    if not apply:
+        return extraction
+    return [f"(episode pass) {l}" for l in store.apply(extraction, episode_id, today)]
+
+
 def close_episode(store: MemoryStore, episode_id: str, today: dt.date | None = None) -> list[str]:
     """End-of-episode pass: re-read the whole transcript to catch what per-turn extraction
     missed, then write the diary summary. Returns log lines."""
     today = today or dt.date.today()
-    turns = store.episode_turns(episode_id)
-    log = []
-    if sum(t["role"] == store.user_name for t in turns) >= 2:  # cross-turn facts need 2+ user messages
-        labeled = "\n".join(line(store.user_name, t["role"], t["text"]) for t in turns)
-        extraction = extract_episode(
-            store.user_name, labeled,
-            candidates=store.extraction_candidates(labeled[-2000:], k=15, episode_id=episode_id, today=today),
-            entities=store.known_entities(), today=today,
-        )
-        log += [f"(episode pass) {line}" for line in store.apply(extraction, episode_id, today)]
+    log = episode_pass(store, episode_id, today)
     summary = summarize_episode(store.user_name, store.episode_transcript(episode_id), today)
     store.end_episode(episode_id, summary.summary if summary else None, summary.mood if summary else None)
     if summary:
