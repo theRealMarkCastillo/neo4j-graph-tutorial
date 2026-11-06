@@ -10,7 +10,7 @@ import pytest
 
 from companion import clock, decay
 from companion.models import Extraction, MemoryOut
-from companion.store import format_context
+from companion.store import PATTERN_SIMILARITY, _clusters, embed, format_context
 
 D1 = dt.date(2026, 11, 18)      # noon on a Wednesday, per clock.now_for
 NOON = clock.now_for(D1)
@@ -169,6 +169,29 @@ def fake_writer(calls):
         calls.append(texts)
         return MemoryOut(text="Pytest works out at the gym regularly", kind="preference", importance=6)
     return write
+
+
+def test_clustering_finds_the_group_an_early_pair_would_hide():
+    """Regression from the scenario run. In time order, "heading" and "just got back" pair up
+    first (0.86); "after work" (0.80 to "got back") and "before work" (0.81) can't join, so
+    first-fit made two pairs. heading / after work / before work are all >= 0.85 to each
+    other: that's the group of three to find."""
+    texts = ["Riley is heading to the gym",
+             "Riley just got back from the gym.",
+             "Riley's legs feel exhausted after a gym session.",
+             "Riley is going to the gym after work and then having dinner",
+             "Riley is at the gym before work."]
+    rows = [{"text": t, "vec": v} for t, v in zip(texts, embed(texts))]
+    groups = _clusters(rows, PATTERN_SIMILARITY, 3)
+    assert [[r["text"] for r in g] for g in groups] == [[texts[0], texts[3], texts[4]]]
+
+
+def test_clustering_does_not_chain():
+    """a~b and b~c, but a is not like c: complete linkage keeps a group of three from forming."""
+    a, b, c = [1.0, 0.0], [0.8, 0.6], [0.28, 0.96]   # a.b = 0.8, b.c = 0.8, a.c = 0.28
+    rows = [{"text": n, "vec": v} for n, v in zip("abc", (a, b, c))]
+    assert _clusters(rows, 0.75, 3) == []
+    assert len(_clusters(rows, 0.75, 2)) == 1
 
 
 def test_repeated_statuses_roll_up_into_a_pattern(store):

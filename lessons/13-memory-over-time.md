@@ -158,6 +158,11 @@ At 0.82, the gym sentences cluster. Rock climbing would chain in through "gym af
 (0.82) under single linkage, but complete linkage keeps it out (0.78 to "leg day"). The pattern
 writer can still decline a cluster that isn't a habit (airport, dentist, post office).
 
+**How the groups are found matters too.** The first version went through memories in time order
+and put each into the first group it fit. An early pair could then lock the rest out (see the
+results below). `_clusters()` now finds the *largest* all-similar group first, removes it and
+repeats. For a few hundred short-lived memories that's still instant.
+
 ## What the tests and evals found
 
 - **"places" was used as a relation type.** Asking about "I'm at the airport waiting for my
@@ -225,24 +230,41 @@ Full run: [outputs/13-scenarios.txt](outputs/13-scenarios.txt).
 
 | Suite | Result |
 |---|---|
-| Fast tests (`pytest -q`, no LLM) | 127 passed |
+| Fast tests (`pytest -q`, no LLM) | 129 passed |
 | Lesson 13 LLM evals, 3 runs each | 6/6 |
 | Extraction evals (Lesson 11), `EVAL_TRIALS=3` | 10/10 |
-| Scenarios, all 13 | 48/49 on the first run; 49/49 after the fix below |
+| Scenarios, all 13 | 49/49 (after two fixes, below) |
 
-The one failure was the habit check, and it was the **scenario's** fault, not the code's. The
-third gym visit was "just got back from the gym, my legs are dead", which the extractor
-(reasonably) stored as a *feeling*: "Riley's legs feel exhausted after a workout". No "gym",
-and only 0.73 similar to the gym statuses, so there were just two gym memories and no cluster
-of three. Lowering the threshold would have "fixed" it and let unrelated memories chain
-together. Instead, the scenario got a clearer extra visit, and the rerun produced:
+The habit check failed twice, for two different reasons.
+
+**1. The input didn't contain three visits.** The third gym message was "just got back from
+the gym, my legs are dead". The extractor (reasonably) stored it as a *feeling*: "Riley's legs
+feel exhausted after a workout". It has no "gym" and is only 0.73 similar to the gym statuses.
+Lowering the threshold would have "fixed" it and let unrelated memories chain together.
+Instead the scenario got a clearer extra visit ("off to the gym again after work").
+
+**2. Then the clustering lost a group that was there.** On the next run there were four gym
+statuses and still no pattern. The first-fit clustering went through them in time order:
+
+```
+heading to the gym   + just got back   0.86  -> pair A
+going after work     vs just got back  0.80  -> can't join A, starts pair B
+at the gym before    vs just got back  0.81  -> can't join A, joins B
+```
+
+That makes two pairs and no group of three. Yet heading / after work / before work are 0.85,
+0.90 and 0.85 to each other. Finding the largest group first fixed it, and
+`test_clustering_finds_the_group_an_early_pair_would_hide` keeps these exact sentences as a
+regression test. The full run then gave 49/49, and the gym habit was the only pattern formed in
+any scenario:
 
 ```
 ✎ (upkeep) pattern from 3 memories: + [fact] Riley goes to the gym regularly.
-✎ (upkeep) pruned 1 dormant status/feeling memories
 ```
 
 When a scenario fails, first ask whether the *input* really contained what the check expects.
+If it did, the next suspect is an order-dependent shortcut in the code. A real LLM run varies a
+little each time, which is how it found a case the fixed fake data in the unit tests never did.
 
 ## Takeaways
 

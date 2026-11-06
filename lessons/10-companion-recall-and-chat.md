@@ -206,13 +206,16 @@ through "No longer true".
 
 ## Where to go next
 
-[Lesson 11](11-harder-scenarios-and-evals.md) handles several of these, plus harder cases.
+Later lessons build on this:
+- **[Lesson 11](11-harder-scenarios-and-evals.md)**: scripted conversations with known facts as
+  evals, checking recall and whether boundaries ever leak.
+- **[Lesson 12](12-ontology.md)**: a relation ontology (synonyms, one-at-a-time relations,
+  inferred family links).
+- **[Lesson 13](13-memory-over-time.md)**: expiry, decay, and a consolidation job that rolls
+  repeated memories up into habits and prunes faded trivia.
 
+Still open, if you want to go further:
 - **Run extraction in the background** (a queue or `asyncio` task) so replies never wait on it.
-- **Consolidation job**: periodically merge related memories, update entity summaries, and
-  decay or archive low-importance, never-used memories.
 - **Graph embeddings** (`gds.fastRP`) on the life graph to find related people and themes.
 - **Multi-user / multi-agent**: the `user` property already scopes everything; add an `agent`
   property to give several personas their own view of the same person.
-- **Evaluation**: script conversations with known facts, then check recall precision and
-  whether boundaries ever leak.

@@ -39,18 +39,33 @@ def _name_similarity(a: list[str], b: list[str]) -> float:
 
 
 def _clusters(rows: list[dict], min_sim: float, min_size: int) -> list[list[dict]]:
-    """Greedy complete-linkage clustering: a row joins a cluster only if it is at least
-    `min_sim` similar to EVERY member, so "gym" can't chain via "climbing" to "hiking"."""
-    clusters: list[list[dict]] = []
-    for r in rows:
-        v = np.asarray(r["vec"])
-        for c in clusters:
-            if all(float(np.dot(v, np.asarray(m["vec"]))) >= min_sim for m in c):
-                c.append(r)
-                break
-        else:
-            clusters.append([r])
-    return [c for c in clusters if len(c) >= min_size]
+    """Complete-linkage clustering: a group's members are ALL at least `min_sim` similar to
+    each other, so "gym" can't chain via "climbing" to "hiking".
+
+    Groups are found largest first: from each memory as a seed, add the others most similar
+    to it that fit with every member so far; keep the biggest group, remove it, repeat.
+    (Putting each memory into the first group it fits, in time order, lets an early pair lock
+    the rest out: tests/test_13_time.py has the real case.) O(n^3), fine for a few hundred."""
+    if not rows:
+        return []
+    vecs = np.asarray([r["vec"] for r in rows], dtype=float)
+    sim = vecs @ vecs.T
+    left = set(range(len(rows)))
+    found: list[list[dict]] = []
+    while len(left) >= min_size:
+        best: list[int] = []
+        for seed in sorted(left):
+            group = [seed]
+            for j in sorted(left - {seed}, key=lambda j: -sim[seed, j]):
+                if all(sim[j, k] >= min_sim for k in group):
+                    group.append(j)
+            if len(group) > len(best):
+                best = group
+        if len(best) < min_size:
+            break
+        found.append([rows[i] for i in sorted(best)])
+        left -= set(best)
+    return found
 
 
 def _new_id(prefix: str) -> str:
