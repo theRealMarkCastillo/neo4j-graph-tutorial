@@ -258,6 +258,12 @@ through the hierarchy) and with the `_sync_superseded_relations` backstop delete
 
 *Where this fits:* Step 4 (canonicalize relation types) and step 10 (infer new ones). The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
 
+*Ontology layer or semantic layer?* This lesson builds an ontology layer: what relation types
+and entity kinds mean, and their rules. A *semantic layer* is a BI term for agreed metric
+definitions over tables, which this repo doesn't have. Vendors use both words loosely; the
+glossary's [semantic layer vs ontology layer](../docs/glossary.md#semantic-layer-vs-ontology-layer)
+compares them, with how each vendor uses them.
+
 **Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
 
 | Term | Means here | Not to be confused with |

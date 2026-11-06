@@ -95,6 +95,50 @@ an ontology. Lesson 12's "two layers" are these two.
   to the layers above: Neo4j is the data tier, `companion/` the logic tier, the web UI the
   presentation tier.
 
+### Semantic layer vs ontology layer
+
+The two names come from different fields, answer different questions, and are blurred by
+vendors because both promise to give raw data "business meaning".
+
+| | Semantic layer | Ontology layer |
+|---|---|---|
+| **Field** | BI and analytics (1990s Business Objects "universes"; today dbt, LookML, Cube, AtScale, Snowflake) | Knowledge representation and the Semantic Web (OWL, RDF; description logic's TBox) |
+| **Answers** | *How is this number calculated?* | *What kinds of things exist, how do they relate, and what follows?* |
+| **Holds** | Metrics, dimensions, joins and segments over tables | Types, a hierarchy, relationships and rules, sometimes inference |
+| **Example** | "Revenue = sum of order lines minus refunds"; "active customer = ordered in the last 90 days" | "A Customer is a Party and places Orders"; "a sister is a sibling"; "one home at a time" |
+| **For** | Every dashboard, notebook and text-to-SQL agent computing the same number | Integrating data about the same things, and reasoning over relationships |
+| **Query** | SQL, or a metrics API that generates SQL | SPARQL, Cypher, or an API over a knowledge graph |
+| **Here** | Not used: the companion has no metrics over tables | Relation types and rules (`:RelType`) and entity kinds ([Lesson 12](../lessons/12-ontology.md)) |
+
+**The overlap is real.** "Active customer" can be a semantic-layer segment (a SQL filter)
+or an ontology class defined by a rule. The difference is purpose: a semantic layer exists
+so *numbers* agree; an ontology exists so *meaning and relationships* agree and can be
+reasoned over.
+
+**How vendors use the words** (checked November 2026; positioning changes often):
+
+| Who | Calls it | What it actually is |
+|---|---|---|
+| dbt (MetricFlow), Cube, AtScale, LookML | semantic layer | The BI kind: metrics defined in code, served to BI tools and, increasingly, to AI agents (dbt also through an MCP server) |
+| Snowflake | semantic views (formerly YAML semantic models) | The BI kind, stored as a schema-level object; Cortex Analyst reads it to write SQL |
+| Open Semantic Interchange (OSI): Snowflake, Salesforce, dbt Labs and partners, from September 2025 | an open semantic standard | A vendor-neutral format for metrics, dimensions, datasets and relationships, so BI semantic layers can be exchanged |
+| Stardog and other RDF/knowledge-graph vendors | semantic layer | An ontology plus a knowledge graph (OWL, RDF, SPARQL), often virtualized over existing databases: "semantic" in the Semantic Web sense |
+| Palantir Foundry | Ontology | An *operational* layer: object types, properties and links (its docs call these the *semantic* elements) plus actions and functions that write back (the *kinetic* elements). More than an ontology in the academic sense |
+| Data catalogs (Atlan, Collibra) | semantic layer, business ontology, glossary | Definitions, owners, lineage and tags about data assets |
+
+**A quick test** for a product page:
+
+| If it's mostly about… | It's a… |
+|---|---|
+| Metrics, aggregations and dimensions over tables | semantic layer (BI sense) |
+| Entity types, relationships, hierarchy, rules or inference | ontology |
+| Objects plus actions that change other systems | operational ontology (Palantir sense) |
+| Definitions, owners, lineage, tags | data catalog / business glossary |
+
+**Questions that cut through the branding:** What exactly is stored? Does it infer anything,
+or only look things up? What's the query language: SQL, SPARQL, Cypher, an API? Is it about
+*numbers* or about *things*?
+
 Other "layers" in the lessons are different things: the **three test layers** (unit, db,
 llm; Lesson 0) and the **three layers of Neo4j's agent-memory package** (short-term,
 long-term, reasoning; [design-decisions](design-decisions.md#how-other-memory-systems-choose)).
@@ -285,7 +329,7 @@ most design arguments. The last column says where this repo stands.
 | **Temporal / bi-temporal KG** | Facts with valid time, and with transaction time too (temporal databases) | Facts that expire or get superseded instead of overwritten (Graphiti) | "Memory that understands time" | Bi-temporal memories and relations (Lessons 8, 13) |
 | **Context graph** | — (a 2025–26 industry term) | A graph of *decisions*: policies, exceptions, precedents, evidence and outcomes, so agents know *why* something happened. Thoughtworks' Radar (April 2026) rates it "Assess" | The next thing after knowledge graphs | Partly: provenance (`FROM` episode), supersession history and the trace record what was *said* and *decided by the code*, but not decisions with reasons as nodes |
 | **Ontology** | OWL/RDFS classes, properties and axioms with formal semantics | A typed vocabulary with rules shared by a team | Palantir's *Ontology*: an operational layer of business objects, links **and actions** that apps and agents act through; or any data model | A lightweight ontology (sense 2 under [ontology](#ontology)), no actions |
-| **Semantic layer** | — (BI and data-warehouse term) | Governed definitions of metrics and dimensions over a warehouse (dbt, Snowflake semantic models, LookML) | "The semantic layer for AI": any metadata an agent can read | Not used. The ontology plays the "agreed meaning" role for relation types |
+| **Semantic layer** | — (BI and data-warehouse term) | Governed definitions of metrics and dimensions over a warehouse (dbt, Snowflake semantic models, LookML) | "The semantic layer for AI": any metadata an agent can read | Not used. The ontology plays the "agreed meaning" role for relation types See [semantic layer vs ontology layer](#semantic-layer-vs-ontology-layer). |
 | **GraphRAG** | Microsoft Research's method (2024): an entity graph plus community summaries for global questions; later DRIFT and LazyGraphRAG | Any RAG that retrieves through a graph, usually vector entry points + traversal | "RAG, but with a graph, so no hallucinations" | The local style (Lessons 5, 10) |
 | **Hybrid search** | Lexical (BM25) + dense retrieval, fused (e.g. reciprocal-rank fusion) | Same, or vector + graph | "Best of both worlds" | Vector + graph; no lexical retriever yet ([D11](design-decisions.md#d11)) |
 | **Vector database** | — | A database built around ANN indexes (Pinecone, Qdrant, Milvus...) | Anything with a vector index, including general databases | A vector index inside Neo4j ([D1](design-decisions.md#d1)) |
@@ -331,7 +375,7 @@ Quick index: [semantic](#semantic) · [ontology](#ontology) · [knowledge graph]
 | 1 | **semantic memory**: general facts, true independent of when they were learned (vs *episodic*: experiences) | cognitive psychology; CoALA, LangMem | `fact`/`preference` memories, the life graph, consolidated habits (Lessons 8, 13) |
 | 2 | **semantic search / semantic similarity**: comparing meaning through embeddings, not words | information retrieval | vector search over `memory_vec`; the retriever called *semantic* in `recall()` (Lessons 5, 10) |
 | 3 | **Semantic Web**: RDF, OWL, SPARQL and linked data standards | W3C | not used; our ontology is a lightweight cousin (Lesson 12) |
-| 4 | **semantic layer / semantic model**: business definitions of metrics and entities over a data warehouse | BI and analytics | not used. The closest thing here is the ontology: an agreed meaning for relation types |
+| 4 | **semantic layer / semantic model**: business definitions of metrics and entities over a data warehouse | BI and analytics | not used. The closest thing here is the ontology: an agreed meaning for relation types. Compared in [semantic layer vs ontology layer](#semantic-layer-vs-ontology-layer) |
 | 5 | **semantic** as in "what it means" in general: semantic deduplication, semantic chunking, semantic cache | everyday ML usage | dedupe by meaning, not exact text (Lesson 9) |
 
 **Watch out:** `recall()` returns a list called `semantic`. That's sense 2 (it came from vector
@@ -500,6 +544,11 @@ relying on a product detail.
 - LangMem conceptual guide — https://langchain-ai.github.io/langmem/concepts/conceptual_guide
 - Mem0 graph memory — https://docs.mem0.ai/open-source/features/graph-memory ; Mem0 2.0 (ADD-only extraction) — https://pypi.org/project/mem0ai/2.0.0/ and https://docs.mem0.ai/migration/
 - Graphiti (Zep's temporal knowledge graph) — https://pypi.org/project/graphiti-core/
+- dbt Semantic Layer and MetricFlow — https://docs.getdbt.com/docs/use-dbt-semantic-layer/dbt-sl
+- Snowflake semantic views — https://www.snowflake.com/en/engineering-blog/native-semantic-views-ai-bi/ ; Cortex Analyst — https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst
+- Open Semantic Interchange (OSI) — https://www.getdbt.com/blog/the-osi-spec-updates ; https://www.snowflake.com/en/blog/osi-initiative-expands-partners/
+- Palantir Foundry Ontology core concepts — https://www.palantir.com/docs/foundry/ontology/core-concepts
+- Stardog platform — https://www.stardog.com/product/
 - Letta MemFS (git-backed memory files) — https://docs.letta.com/concepts/memfs ; context repositories — https://www.letta.com/blog/context-repositories
 - Cognee (add / cognify / memify pipeline) — https://github.com/topoteretes/cognee
 - Neo4j Labs agent memory (short-term, long-term POLE+O, reasoning memory) — https://neo4j.com/labs/agent-memory

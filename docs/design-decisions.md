@@ -269,6 +269,9 @@ so synonyms are explicit.
 - SHACL shapes (validation, not inference).
 - Let the LLM normalize at write time with the vocabulary in the prompt (we do this too, and
   the code checks it).
+- Not an alternative: a BI *semantic layer* (dbt, LookML, Snowflake semantic views). It makes
+  *metrics* agree across tools; it doesn't define what relations mean or infer anything. See
+  [semantic layer vs ontology layer](glossary.md#semantic-layer-vs-ontology-layer).
 
 ---
 
