@@ -77,7 +77,7 @@ Two extras make it feel like a companion rather than a chatbot:
 ## Terminal chat
 
 ```bash
-uv run python -m companion                  # uses COMPANION_USER / COMPANION_NAME from config.py
+uv run python -m companion                  # uses COMPANION_USER / COMPANION_NAME from .env
 uv run python -m companion --user Sam --debug   # --debug prints the memory block each turn
 ```
 

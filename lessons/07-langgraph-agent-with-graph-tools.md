@@ -5,19 +5,20 @@ Lesson 6 described giving an agent tools over the graph. Here we build it with
 
 ## Setup
 
-In [`config.py`](../config.py), with the key in `.env` (see [.env.example](../.env.example)):
+In `.env` (see [.env.example](../.env.example)):
 
-```python
-LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"  # or OpenAI, DeepInfra, Ollama...
-LLM_MODEL = "gemini-3.8-flash"
-LLM_AGENT_MODEL = ...  # this agent's model: gemini-2.5-flash on Gemini, else LLM_MODEL
+```bash
+LLM_BASE_URL=https://api.deepinfra.com/v1   # or OpenAI, OpenRouter, Ollama, LM Studio, vLLM...
+LLM_MODEL=google/gemma-4-31B-it              # must support tool calling
+LLM_API_KEY=...
 ```
 
 `config.chat_model()` builds a LangChain `ChatOpenAI` pointed at that endpoint, so swapping
-providers is a settings change in `config.py`, not a code change. The agent's model must support
-tool calling. On Gemini it is `gemini-2.5-flash`: Gemini 3 models attach a `thought_signature`
-to each tool call and reject the next request unless it is sent back, which `ChatOpenAI` doesn't
-do. Recorded outputs used DeepInfra with `google/gemma-4-31B-it`.
+providers is an `.env` change, not a code change. The agent's model is `LLM_AGENT_MODEL`
+(default `LLM_MODEL`). On Gemini set it to `gemini-2.5-flash`: Gemini 3 models attach a
+`thought_signature` to each tool call and reject the next request unless it's sent back, which
+`ChatOpenAI` doesn't do. Recorded outputs used DeepInfra with
+`google/gemma-4-31B-it`.
 
 ## LangGraph in one picture
 

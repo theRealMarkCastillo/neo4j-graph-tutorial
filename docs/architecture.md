@@ -53,7 +53,7 @@ flowchart LR
             lg["LangGraph apps"]
             fe["fastembed (local, CPU)<br/>bge-small 384-dim: Lessons 5-7, tests,<br/>companion default · cross-encoder"]
         end
-        env[("config.py + .env<br/>settings + secrets")]
+        env[(".env<br/>NEO4J_* / LLM_* / EMBED_*")]
         subgraph docker["Docker Compose"]
             neo["neo4j:5.26 + APOC + GDS<br/>:7474 Browser · :7687 Bolt"]
             vol[("named volumes<br/>data · plugins · logs")]

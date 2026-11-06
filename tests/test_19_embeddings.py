@@ -4,7 +4,7 @@
 
 These run on the local model by default (conftest.py sets that up), and a fake endpoint
 stands in for the remote one, so they check the wiring without an API key. With
-TEST_REMOTE_EMBEDDINGS=1 they run on the model in config.py instead, and the calibration test
+TEST_REMOTE_EMBEDDINGS=1 they run on the model in .env instead, and the calibration test
 checks THAT model's thresholds (the release check in the README).
 """
 import numpy as np

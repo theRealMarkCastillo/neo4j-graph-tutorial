@@ -43,7 +43,7 @@ label, and creates one vector index `embedded_vec` over all of them.
 > |---|---|---|
 > | 5.1 toy example | typed by hand | three made-up numbers |
 > | Lessons 5–7 scripts (`embed.py`, `graphrag.py`, `team_agent.py`) | fastembed on your CPU | bge-small, always |
-> | The companion (Lessons 8–19) | `companion/embeddings.py` | bge-small by default, or a remote endpoint set in `config.py` (Lesson 19) |
+> | The companion (Lessons 8–19) | `companion/embeddings.py` | bge-small by default, or a remote endpoint set in `.env` (Lesson 19) |
 > | The test suite | fastembed on your CPU | bge-small by default, so tests run offline; `TEST_REMOTE_EMBEDDINGS=1` runs them on your model |
 >
 > A small local model is the right start: no key, no cost, and you can see every step.
@@ -104,7 +104,7 @@ half of **GraphRAG**.
 2. One Cypher query: top-3 nodes by meaning, then each one's relationships turned into
    plain-English facts.
 3. Send the facts to the LLM as context with the plain OpenAI SDK (`config.llm_client()`,
-   the OpenAI-compatible endpoint set by `LLM_*` in `config.py` (key in `.env`); otherwise the script prints the
+   any OpenAI-compatible endpoint set by `LLM_*` in `.env`; otherwise the script prints the
    context and stops).
 
 ```bash

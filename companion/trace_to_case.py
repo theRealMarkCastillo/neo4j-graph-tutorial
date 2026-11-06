@@ -4,7 +4,7 @@
     uv run --group observability python -m companion.trace_to_case <trace id> --append   # add it
 
 The round trip:
-1. Chat with tracing on (MLFLOW_TRACKING_URI in config.py) and spot a wrong memory.
+1. Chat with tracing on (MLFLOW_TRACKING_URI, see observability.py) and spot a wrong memory.
 2. In the MLflow UI, open that turn's `remember` trace and copy its id (tr-...).
 3. Run this. It writes a pytest case that replays the extraction with the exact inputs the
    trace recorded (message, reply, candidates, known entities, earlier turns, date), and shows
@@ -83,10 +83,10 @@ def main() -> None:
     parser.add_argument("--append", action="store_true", help=f"append to {EVAL_FILE.name}")
     args = parser.parse_args()
 
-    import config  # noqa: F401  (turns tracing on from config.MLFLOW_TRACKING_URI)
+    import config  # noqa: F401  (turns tracing on from MLFLOW_TRACKING_URI in .env)
 
     if not observability.enabled():
-        sys.exit("Set MLFLOW_TRACKING_URI in config.py (and run `uv sync --group observability`) first.")
+        sys.exit("Set MLFLOW_TRACKING_URI in .env (and run `uv sync --group observability`) first.")
     import mlflow
 
     trace = mlflow.get_trace(args.trace_id)

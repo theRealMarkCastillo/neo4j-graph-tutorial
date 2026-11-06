@@ -9,7 +9,6 @@ Rules the fixtures enforce:
   use their own `pytest` user, wiped before and after.
 - A test whose lesson you haven't done yet is SKIPPED with a reason, not failed.
 """
-import os
 import sys
 from pathlib import Path
 
@@ -21,10 +20,10 @@ import config  # noqa: E402
 
 # The tests run on the local embedding model by default (Lesson 19): offline, fast, free. Its
 # vectors live apart from a remote model's, so this is safe even when your chats use
-# config.EMBED_BASE_URL. TEST_REMOTE_EMBEDDINGS=1 runs them on the model in config.py (the
-# README's release check): thresholds come from the active profile, so the same tests hold on
-# either model. Patched here, before any companion module reads the settings.
-if not os.getenv("TEST_REMOTE_EMBEDDINGS"):
+# EMBED_BASE_URL. TEST_REMOTE_EMBEDDINGS=1 runs them on the model in .env (the README's release
+# check): thresholds come from the active profile, so the same tests hold on either model.
+# Patched here, before any companion module reads the settings.
+if not config.TEST_REMOTE_EMBEDDINGS:
     config.EMBED_BASE_URL = None
     config.EMBED_MODEL = config.LOCAL_EMBED_MODEL
 
@@ -82,7 +81,7 @@ def store(driver):
 @pytest.fixture(scope="session")
 def llm_ready():
     if not config.llm_configured():
-        pytest.skip("no LLM: set LLM_API_KEY in .env (or point config.LLM_BASE_URL at a local server)")
+        pytest.skip("LLM_MODEL is not set in .env")
 
 
 @pytest.hookimpl(tryfirst=True)  # tag before `-m` filtering runs
@@ -95,8 +94,7 @@ def pytest_collection_modifyitems(items):
 
 def trials(check):
     """Run an eval case EVAL_TRIALS times (default 1); fail with every failing output."""
-    import os
-    n = int(os.environ.get("EVAL_TRIALS", "1"))
+    n = config.EVAL_TRIALS
     failures = []
     for _ in range(n):
         try:
@@ -122,7 +120,7 @@ def pytest_runtest_call(item):
     if not (observability.enabled() and item.get_closest_marker("llm")):
         yield
         return
-    observability.start_eval_run("evals", eval_trials=os.environ.get("EVAL_TRIALS", "1"))
+    observability.start_eval_run("evals", eval_trials=config.EVAL_TRIALS)
     with observability.span(item.name, "CHAIN", inputs={"test": item.nodeid}) as sp:
         observability.tag_trace(eval_case=item.nodeid)
         item.stash[_trace_key] = sp.trace_id

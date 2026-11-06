@@ -7,7 +7,7 @@ AI companion — with every query's recorded output.
 ## Quick start
 
 ```bash
-cp .env.example .env              # set NEO4J_PASSWORD; LLM_API_KEY for lessons 5 and 7–20
+cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–20
 docker compose up -d --build      # Neo4j 5 + APOC + Graph Data Science
 uv sync                           # Python 3.12 + the exact tested versions, into .venv
 ```
@@ -126,36 +126,35 @@ agent and the companion are in [docs/architecture.md](docs/architecture.md).
 
 ## LLM settings (lessons 5 and 7–20)
 
-Any OpenAI-compatible endpoint with tool calling works (Gemini, OpenAI, DeepInfra, OpenRouter,
-Ollama, LM Studio, vLLM...). Every setting is in [`config.py`](config.py); only the keys go in
-`.env`:
+Any OpenAI-compatible endpoint with tool calling works (OpenAI, DeepInfra, OpenRouter,
+Ollama, LM Studio, vLLM...). Set in `.env`:
 
-| Setting | Where | |
-|---|---|---|
-| `LLM_BASE_URL` | `config.py` | e.g. `https://generativelanguage.googleapis.com/v1beta/openai/`, `https://api.openai.com/v1`, `http://localhost:11434/v1` |
-| `LLM_MODEL` | `config.py` | chat model name |
-| `LLM_EXTRACTION_MODEL` | `config.py` | model for memory extraction |
-| `LLM_TEMPERATURE` | `config.py` | chat temperature (extraction always runs at 0) |
-| `LLM_AGENT_MODEL` | `config.py` | the Lesson 7 agent's model: `gemini-2.5-flash` on Gemini (Gemini 3 needs a `thought_signature` sent back with tool calls, which the OpenAI-compatible client drops), otherwise `LLM_MODEL` |
-| `COMPANION_USER`, `COMPANION_NAME` | `config.py` | default user and companion names |
-| `LLM_API_KEY` | `.env` | key (leave empty for local servers) |
+| Key | |
+|---|---|
+| `LLM_BASE_URL` | e.g. `https://api.openai.com/v1`, `http://localhost:11434/v1` |
+| `LLM_MODEL` | chat model name |
+| `LLM_API_KEY` | key (any value for local servers) |
+| `LLM_EXTRACTION_MODEL` | optional, model for memory extraction (defaults to `LLM_MODEL`) |
+| `LLM_AGENT_MODEL` | optional, model for the Lesson 7 agent (defaults to `LLM_MODEL`). On Gemini use `gemini-2.5-flash`: Gemini 3 models need a `thought_signature` sent back with tool calls, which the OpenAI-compatible client drops |
+| `LLM_TEMPERATURE` | chat temperature |
+| `COMPANION_USER`, `COMPANION_NAME` | default user and companion names |
 
 **Embeddings: local to learn, remote to use.** Lessons 5–7 and the default test run always use
 a small local model (`BAAI/bge-small-en-v1.5` via fastembed): no key, offline, the same numbers
 every run, and the numbers recorded in Lessons 8–18. For real use of the companion we
 recommend the larger remote model: it separates related from unrelated memories far better
 (AUC 0.994 vs 0.854) and fixes misses the small model can't. Lesson 19 has the full table of
-what runs where. It takes three more settings:
+what runs where. It takes three more keys:
 
-| Setting | Where | |
-|---|---|---|
-| `EMBED_BASE_URL` | `config.py` | an OpenAI-compatible `/embeddings` endpoint; `None` = local bge-small |
-| `EMBED_MODEL` | `config.py` | e.g. `Qwen/Qwen3-Embedding-8B`; needs a measured profile in `companion/embeddings.py` |
-| `EMBED_API_KEY` | `.env` | optional, defaults to `LLM_API_KEY` |
+| Key | |
+|---|---|
+| `EMBED_BASE_URL` | an OpenAI-compatible `/embeddings` endpoint; empty = local bge-small |
+| `EMBED_MODEL` | e.g. `Qwen/Qwen3-Embedding-8B`; needs a measured profile in `companion/embeddings.py` |
+| `EMBED_API_KEY` | optional, defaults to `LLM_API_KEY` |
 
 After switching, run `uv run python -m companion.reembed`. The default test run uses the
-local model; the [release check](#release-check-on-the-model-you-ship) runs everything on yours. The reranker that labels unrelated recall matches also runs locally (`RERANK_MODEL` in
-`config.py`, `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding profile sets
+local model; the [release check](#release-check-on-the-model-you-ship) runs everything on yours. The reranker that labels unrelated recall matches also runs locally (`RERANK_MODEL`,
+default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding profile sets
 `weak_below`, Lesson 19). Local models are downloaded once and loaded once per process.
 
 ## Files
@@ -163,10 +162,10 @@ local model; the [release check](#release-check-on-the-model-you-ship) runs ever
 | Path | What |
 |---|---|
 | `Dockerfile`, `docker-compose.yml` | Neo4j 5.26 with APOC + GDS, data in named volumes |
-| `.env.example` → `.env` | Secrets only: Neo4j credentials and API keys (`.env` is git-ignored) |
+| `.env.example` → `.env` | Neo4j credentials and LLM keys (`.env` is git-ignored) |
 | `pyproject.toml`, `uv.lock`, `.python-version` | Dependencies, the exact tested versions, the Python version (`uv sync`) |
 | `requirements.txt` | The same pinned versions for pip, generated from `uv.lock` |
-| `config.py` | Every setting (endpoints, models, temperature, names, MLflow); reads the secrets from `.env` |
+| `config.py` | The one place that reads settings: loads `.env` (secrets, endpoints, model names) with defaults; everything else imports from it |
 | `observability.py` | Optional MLflow tracing and eval logging (see *Tests and evals*) |
 | `seed/00_seed.cypher` | Starting graph for Lesson 1 |
 | `team_graph.py` | Lesson 4 — Python driver patterns |
@@ -210,15 +209,15 @@ lesson ends with a *Test it* section on what its tests teach.
 
 The Lesson 18 trace shows what memory did on one turn. For more detail, such as every LLM call
 with its prompt, tokens and latency, plus eval runs you can compare over time, turn on local
-MLflow tracing. It's off unless `MLFLOW_TRACKING_URI` is set in `config.py`:
+MLflow tracing. It's off unless `MLFLOW_TRACKING_URI` is set:
 
 ```bash
 uv sync --group observability                                    # once: installs mlflow
 uv run --group observability mlflow server --backend-store-uri sqlite:///mlflow.db --port 5001
 ```
 
-Then set `MLFLOW_TRACKING_URI = "http://localhost:5001"` in `config.py`, and in another
-terminal run as usual with `--group observability`:
+Then, in another terminal, add `MLFLOW_TRACKING_URI=http://localhost:5001` to `.env` (or
+prefix one command with it), and run as usual with `--group observability`:
 
 ```bash
 uv run --group observability python -m companion                 # every turn is a trace
@@ -257,12 +256,12 @@ rerun `pytest -m llm`, and compare the two runs in MLflow.
 ### Release check: on the model you ship
 
 The default run pins the local embedding model, so it stays fast, free and offline. Before you
-rely on a change, run the tests, the LLM evals and the scenarios on the models in `config.py`:
+rely on a change, run the tests, the LLM evals and the scenarios on the model in your `.env`:
 
 ```bash
 TEST_REMOTE_EMBEDDINGS=1 uv run python -m pytest              # ~5 min: every embedding is remote
 TEST_REMOTE_EMBEDDINGS=1 uv run python -m pytest -m llm       # LLM evals, costs money
-uv run python -m companion.scenarios                          # scripted conversations (use config.py)
+uv run python -m companion.scenarios                          # scripted conversations (use .env)
 uv run python -m companion.calibrate                          # are the thresholds still right?
 ```
 
@@ -286,7 +285,7 @@ uv run python -m companion            # companion chat (/help for commands; --pe
 uv run python -m companion.web        # Lessons 17-18 web UI on http://127.0.0.1:8000 (click a reply to see its trace)
 uv run python -m companion.demo       # scripted two-session companion demo
 uv run python -m companion.scenarios  # Lesson 11–16 scenario tests (real LLM calls)
-uv run python -m companion.calibrate  # Lesson 19: measure thresholds for the embedding model in config.py
+uv run python -m companion.calibrate  # Lesson 19: measure thresholds for the embedding model in .env
 uv run python -m companion.reembed    # Lesson 19: backfill vectors after switching models
 uv run python -m companion.reextract --user Mark --dry-run  # Lesson 20: re-read old conversations
 uv run python graphrag.py "Who should own our new Rust performance work?"

@@ -10,15 +10,16 @@ An eval is a test whose subject is non-deterministic, so:
 These call extract_memories() directly: no database, just prompt in, Extraction out.
 """
 import datetime as dt
-import os
 import re
 
 import pytest
 
+import config
+
 from companion.extract import extract_episode, extract_memories, summarize_episode
 
 pytestmark = pytest.mark.llm
-TRIALS = int(os.environ.get("EVAL_TRIALS", "1"))
+TRIALS = config.EVAL_TRIALS
 WED = dt.date(2026, 11, 18)  # a Wednesday: "Friday" -> 2026-11-20
 
 

@@ -11,18 +11,17 @@ safely means more than changing a model name:
 3. **Keep the vectors apart**: one index has one size, and tests shouldn't need an API key.
 4. **Backfill**: memories stored before the switch have no vector from the new model.
 
-```python
-# config.py (the key, EMBED_API_KEY, goes in .env; it defaults to LLM_API_KEY)
-EMBED_BASE_URL = "https://api.deepinfra.com/v1"   # any OpenAI-compatible /embeddings endpoint
-EMBED_MODEL = "Qwen/Qwen3-Embedding-8B" if EMBED_BASE_URL else LOCAL_EMBED_MODEL
-```
-
 ```bash
+# .env
+EMBED_BASE_URL=https://api.deepinfra.com/v1/openai   # any OpenAI-compatible /embeddings endpoint
+EMBED_MODEL=Qwen/Qwen3-Embedding-8B
+# EMBED_API_KEY defaults to LLM_API_KEY
+
 uv run python -m companion.reembed      # give existing memories a Qwen vector
 uv run python -m companion.web          # same app, new embeddings
 ```
 
-Set `EMBED_BASE_URL = None` and everything runs on bge-small, as before.
+Leave `EMBED_BASE_URL` empty and everything runs on bge-small, as before.
 
 ## 1. Pick a model by measuring, not by leaderboard
 
@@ -103,8 +102,8 @@ come from `calibrate.py`, which holds labelled pairs for each decision. They're 
 went wrong once, plus near misses:
 
 ```bash
-uv run python -m companion.calibrate    # the model in config.py
-# for bge-small, set EMBED_BASE_URL = None in config.py and run it again
+uv run python -m companion.calibrate                    # the model in .env
+EMBED_BASE_URL= uv run python -m companion.calibrate    # bge-small, for comparison
 ```
 
 ```
@@ -197,10 +196,10 @@ This gives three things:
 
 | What | Model | Runs | Why there |
 |---|---|---|---|
-| Your chats (CLI and web UI) | Qwen3-Embedding-8B, if `EMBED_BASE_URL` is set in `config.py` | remote API | best separation of related and unrelated memories |
-| The same, with `EMBED_BASE_URL = None` | bge-small | fastembed, CPU | no key, offline, the course default |
+| Your chats (CLI and web UI) | Qwen3-Embedding-8B, if `EMBED_BASE_URL` is set | remote API | best separation of related and unrelated memories |
+| The same, with `EMBED_BASE_URL` empty | bge-small | fastembed, CPU | no key, offline, the course default |
 | The test suite (default run) | bge-small | fastembed, CPU | offline, free, seconds |
-| The release check (`TEST_REMOTE_EMBEDDINGS=1`) | the model in `config.py` | remote API | tests the model you ship |
+| The release check (`TEST_REMOTE_EMBEDDINGS=1`) | the model in `.env` | remote API | tests the model you ship |
 | Lessons 5–7 scripts | bge-small | fastembed, CPU | the learning examples need no account |
 | "Loosely related" labels | the cross-encoder `ms-marco-MiniLM-L-6-v2` | fastembed, CPU | only for models without a measured `weak_below` (bge-small) |
 | Lesson 15 graph embeddings | FastRP | inside Neo4j (GDS) | they come from graph structure, not text |

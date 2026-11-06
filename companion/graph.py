@@ -20,7 +20,6 @@ Per-call settings travel in config["configurable"]: thread_id (= episode id), to
 from __future__ import annotations
 
 import datetime as dt
-import os
 import re
 import time
 
@@ -29,7 +28,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 
-from config import chat_model
+from config import COMPANION_DEBUG_EXTRACT, chat_model
 import observability
 from companion import clock
 from companion.worker import Background
@@ -204,7 +203,7 @@ def build_companion(store: MemoryStore, background: Background | None = None,
                     store.user_name, said, answered, candidates=candidates, entities=entities,
                     today=today, earlier=earlier, companion=store.agent,
                 )
-                if os.environ.get("COMPANION_DEBUG_EXTRACT"):  # print the raw LLM extraction
+                if COMPANION_DEBUG_EXTRACT:  # print the raw LLM extraction
                     print("     raw extraction:", extraction.model_dump_json(exclude_defaults=True))
                 llm_done = time.perf_counter()
                 log = store.apply(extraction, episode_id, today)

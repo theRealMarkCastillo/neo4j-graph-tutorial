@@ -1,8 +1,8 @@
-"""Optional MLflow tracing and eval logging. Off unless MLFLOW_TRACKING_URI is set in config.py.
+"""Optional MLflow tracing and eval logging. Off unless MLFLOW_TRACKING_URI is set in .env.
 
     uv sync --group observability                         # once: installs mlflow
     uv run --group observability mlflow server --backend-store-uri sqlite:///mlflow.db --port 5001
-    # in config.py: MLFLOW_TRACKING_URI = "http://localhost:5001", then
+    # .env: MLFLOW_TRACKING_URI=http://localhost:5001, then
     uv run --group observability python -m companion
 
 What you get once it's on:
@@ -34,8 +34,7 @@ def setup(uri: str | None, experiment: str = "companion") -> bool:
     try:
         import mlflow
     except ImportError:
-        print("MLFLOW_TRACKING_URI is set in config.py but mlflow isn't installed: "
-              "uv sync --group observability")
+        print("MLFLOW_TRACKING_URI is set but mlflow isn't installed: uv sync --group observability")
         return False
     mlflow.set_tracking_uri(uri)
     mlflow.set_experiment(experiment)
