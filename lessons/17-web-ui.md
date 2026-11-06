@@ -122,3 +122,7 @@ Anyone who can reach it can read the memories. A real deployment needs at least:
   decay) applies everywhere without being re-implemented.
 - Test the wiring with fakes and `TestClient`. Leave the model to its evals.
 - Logic duplicated in the frontend (the decay curve) needs a check against the backend.
+
+## Next
+
+[Lesson 18](18-seeing-memory-work.md) shows what memory does on each turn: what recall found, the exact prompt, and why each write happened.

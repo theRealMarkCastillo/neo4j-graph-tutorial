@@ -7,7 +7,7 @@ AI companion — with every query's recorded output.
 ## Quick start
 
 ```bash
-cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–12
+cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–18
 docker compose up -d --build      # Neo4j 5 + APOC + Graph Data Science
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
@@ -37,11 +37,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | 15 | [Graph embeddings](lessons/15-graph-embeddings.md) | FastRP + kNN vs. node similarity on the life graph, Cypher projections, seeds and cut-offs |
 | 16 | [Personas](lessons/16-personas.md) | Several companions sharing one memory: private vs. shared memories, hiding derived data, per-persona diaries |
 | 17 | [A web UI](lessons/17-web-ui.md) | FastAPI + one HTML page: chat, life graph, decay curves, related entities; API tests with a fake LLM |
+| 18 | [Watching memory work](lessons/18-seeing-memory-work.md) | Per-turn trace: what recall found by retriever, the exact prompt, why each write happened, timings, persona lens, look-ahead clock, diary |
 
 **Architecture:** component, LangGraph, sequence, data-model and lifecycle diagrams for the
 agent and the companion are in [docs/architecture.md](docs/architecture.md).
 
-## LLM settings (lessons 5 and 7–17)
+## LLM settings (lessons 5 and 7–18)
 
 Any OpenAI-compatible endpoint with tool calling works (OpenAI, DeepInfra, OpenRouter,
 Ollama, LM Studio, vLLM...). Set in `.env`:
@@ -75,7 +76,7 @@ Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
 | `companion/clock.py`, `companion/decay.py` | Lesson 13 — one clock; the forgetting curve |
 | `companion/worker.py` | Lesson 14 — background extraction worker |
 | `companion/insights.py` | Lesson 15 — graph embeddings (FastRP + kNN) and node similarity |
-| `companion/web.py`, `companion/static/` | Lesson 17 — web UI (FastAPI + one HTML page) |
+| `companion/web.py`, `companion/static/` | Lessons 17–18 — web UI (FastAPI + one HTML page) and the per-turn memory trace |
 | `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–17 |
 | `tests/`, `pytest.ini` | Per-lesson tests and LLM evals (see *Tests and evals*) |
 | `docs/glossary.md` | Glossary of overlapping memory / graph / ontology terms |
@@ -107,7 +108,7 @@ docker compose stop               # stop, keep data
 docker compose down -v            # stop and DELETE all data
 .venv/bin/python team_agent.py    # Lesson 7 agent (interactive)
 .venv/bin/python -m companion     # companion chat (/help for commands; --persona Coach, --sync)
-.venv/bin/python -m companion.web # Lesson 17 web UI on http://127.0.0.1:8000
+.venv/bin/python -m companion.web # Lessons 17-18 web UI on http://127.0.0.1:8000 (click a reply to see its trace)
 .venv/bin/python -m companion.demo   # scripted two-session companion demo
 .venv/bin/python -m companion.scenarios   # Lesson 11–16 scenario tests (real LLM calls)
 .venv/bin/python graphrag.py "Who should own our new Rust performance work?"

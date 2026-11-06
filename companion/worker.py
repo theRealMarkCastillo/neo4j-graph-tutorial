@@ -67,5 +67,11 @@ class Background:
         with self._lock:
             return any(not f.done() for f in self._pending)
 
+    @property
+    def queued(self) -> int:
+        """Jobs submitted but not finished (the one running included)."""
+        with self._lock:
+            return sum(not f.done() for f in self._pending)
+
     def close(self) -> None:
         self._pool.shutdown(wait=True)

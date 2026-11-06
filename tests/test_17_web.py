@@ -64,7 +64,7 @@ def test_a_whole_conversation(client):
     assert (s["persona"], s["today"]) == ("Sage", "2026-11-18")
     assert "I'm Sage" in s["greeting"]  # empty memory: the fixed first greeting, no LLM
 
-    assert client.post("/api/chat", json={"text": "I adopted a cat named Miso!"}).json() == {"reply": "Nice!"}
+    assert client.post("/api/chat", json={"text": "I adopted a cat named Miso!"}).json() == {"reply": "Nice!", "turn": 1}
     lines = wait_for_memories(client)
     assert "linked user -pet-> Miso" in lines
 

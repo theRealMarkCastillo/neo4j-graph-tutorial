@@ -467,26 +467,33 @@ class MemoryStore:
         stored: list = []  # vectors created in THIS transaction: the vector index can't see them yet
         for mem, vec in zip(ex.memories, vectors):
             until = clock.parse_until(mem.valid_until, now, mem.kind)
-            if tombstones and max(float(np.dot(vec, t)) for t in tombstones) >= FORGOTTEN_SCORE:
-                log.append("skipped a memory the user asked to forget earlier in this conversation")
+            # Each decision says WHY in its log line (the web UI shows them as they happen).
+            # These two compare raw cosine in Python; the index lookup below uses its 0-1 score.
+            gone = max((float(np.dot(vec, t)) for t in tombstones), default=0.0)
+            if gone >= FORGOTTEN_SCORE:
+                log.append("skipped a memory the user asked to forget earlier in this conversation "
+                           f"(cosine {gone:.3f} ≥ {FORGOTTEN_SCORE})")
                 continue
-            if any(float(np.dot(vec, v)) >= DUPLICATE_SCORE for v in stored):
-                log.append(f"skipped a repeat within this extraction: {mem.text}")
+            repeat = max((float(np.dot(vec, v)) for v in stored), default=0.0)
+            if repeat >= DUPLICATE_SCORE:
+                log.append(f"skipped a repeat within this extraction: {mem.text} "
+                           f"(cosine {repeat:.3f} ≥ {DUPLICATE_SCORE})")
                 continue
-            dup = q(
+            nearest = q(
                 """
                 CALL db.index.vector.queryNodes('memory_vec', 50, $vec) YIELD node, score
-                WHERE node.user = $user AND node.invalidated_at IS NULL AND score >= $min
+                WHERE node.user = $user AND node.invalidated_at IS NULL
                   AND (node.valid_until IS NULL OR node.valid_until > $now)  // expired: say it again = new
                   AND """ + visible("node") + """
                   // same dates too: "dentist on 2026-11-12" -> "...on 2026-11-17" reads almost the
                   // same but is a real correction; an identical "replacement" is just a duplicate
                   AND coalesce(node.due_on, date('1900-01-01')) = coalesce($due, date('1900-01-01'))
                   AND coalesce(node.occurred_on, date('1900-01-01')) = coalesce($occurred, date('1900-01-01'))
-                RETURN node.id AS id LIMIT 1
+                RETURN node.id AS id, node.text AS text, score ORDER BY score DESC LIMIT 1
                 """,
-                vec=vec, min=DUPLICATE_SCORE, due=_to_date(mem.due_on), occurred=_to_date(mem.occurred_on),
+                vec=vec, due=_to_date(mem.due_on), occurred=_to_date(mem.occurred_on),
             )
+            dup = [n for n in nearest if n["score"] >= DUPLICATE_SCORE]
             if dup:  # already known: reinforce instead of storing a near-copy
                 q(
                     """
@@ -498,7 +505,8 @@ class MemoryStore:
                     """,
                     id=dup[0]["id"], imp=mem.importance, until=until,
                 )
-                log.append(f"reinforced {dup[0]['id']}")
+                log.append(f"reinforced {dup[0]['id']} \"{dup[0]['text']}\" "
+                           f"(similarity {dup[0]['score']:.3f} ≥ {DUPLICATE_SCORE})")
                 self.written_ids.append(dup[0]["id"])
                 # The near-copy may still be a correction ("brother is Leo" superseding "...Theo"):
                 # retire what it replaces, or the wrong memory stays current.
@@ -544,10 +552,14 @@ class MemoryStore:
                 private=self._private(mem),
                 vec=vec, about=about, ep=episode_id or "", supersedes=mem.supersedes, now=now,
             )[0]["retired"]
-            flags = (" (sensitive)" if mem.sensitive else "") + (" (private)" if mem.private and not mem.sensitive else "") + (f" (yearly {mem.annual_date})" if _annual(mem.annual_date) else "")
+            flags = (" (sensitive)" if mem.sensitive else "") + (f" (yearly {mem.annual_date})" if _annual(mem.annual_date) else "")
             if until:
                 flags += f" (until {until:%Y-%m-%d %H:%M})"
-            log.append(f"+ [{mem.kind}] {mem.text}{flags}" + (f"  (replaces {', '.join(retired)})" if retired else ""))
+            if self._private(mem):
+                flags += f" (private to {self.agent})"
+            why = (f"  [new: closest known {nearest[0]['score']:.3f} < {DUPLICATE_SCORE}]" if nearest
+                   else "  [new: nothing similar with the same dates]")
+            log.append(f"+ [{mem.kind}] {mem.text}{flags}" + (f"  (replaces {', '.join(retired)})" if retired else "") + why)
 
         for name in ex.forget_entities:  # last, so memories made this turn about them go too
             gone = self.forget_entity(name, known)
@@ -626,7 +638,9 @@ class MemoryStore:
         return [{**f, **rows[f["id"]], "via_name": rows[f["via"]]["name"]}
                 for f in found if f["id"] in rows and f["via"] in rows]
 
-    def recall(self, query: str, k: int = 8, today: dt.date | None = None) -> dict:
+    def recall(self, query: str, k: int = 8, today: dt.date | None = None, touch: bool = True) -> dict:
+        """What the companion knows that's relevant to `query`. `touch=False` only looks
+        (the web UI's preview): it doesn't count as an access."""
         today = today or dt.date.today()
         now = clock.now_for(today)
         q = partial(self._q, now=now)  # every query below sees the conversation's clock
@@ -672,6 +686,9 @@ class MemoryStore:
         )
         # Decay (Lesson 13) in Python, where the curve is unit-tested: drop dormant memories,
         # then order by match + strength.
+        dormant = [{"id": m["id"], "kind": m["kind"], "text": m["text"], "score": m["score"],
+                    "strength": round(decay.strength(m["importance"], m["kind"], m["age"]), 3)}
+                   for m in semantic if decay.is_dormant(m["importance"], m["kind"], m["age"])]
         semantic = sorted(
             ({**m, "rank": round(decay.rank(m["score"], m["importance"], m["kind"], m["age"]), 3),
               "stale": decay.is_stale(m["kind"], m["age"])}
@@ -793,14 +810,15 @@ class MemoryStore:
             """
         )
         touched = [m["id"] for m in semantic] + [m["id"] for e in entities for m in e["memories"]]
-        q(
+        if touch:
+            q(
             """
-            MATCH (m:Memory) WHERE m.id IN $ids
-            SET m.last_accessed = datetime(), m.access_count = coalesce(m.access_count, 0) + 1
-            """,
-            ids=touched,
-        )
-        return {"core": core, "semantic": semantic, "entities": entities, "people": people,
+                MATCH (m:Memory) WHERE m.id IN $ids
+                SET m.last_accessed = datetime(), m.access_count = coalesce(m.access_count, 0) + 1
+                """,
+                ids=touched,
+            )
+        return {"dormant": dormant, "core": core, "semantic": semantic, "entities": entities, "people": people,
                 "followups": followups, "upcoming": upcoming, "history": history, "episodes": episodes,
                 "recent": recent}
 

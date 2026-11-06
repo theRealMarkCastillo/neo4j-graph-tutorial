@@ -164,6 +164,8 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **Conditional edge** | A transition chosen by a function | `tools_condition`, `worth_remembering` | a tool call |
 | **Background worker** | Code that runs a job on another thread so the caller doesn't wait | `companion/worker.py`: one thread, jobs in order (Lesson 14) | async/await (one thread taking turns; here it's a real second thread) |
 | **Fake** (test double) | A simple working stand-in for a real dependency | `FakeListChatModel`, fake extractors and pattern writers | a mock (which checks *how* it was called) |
+| **Trace** | A record of what each step of one request did, with timings | `build_companion(..., trace=[])`: recall, prompt, extraction decisions per turn (Lesson 18) | a log (lines in time order, not grouped by request) |
+| **Retriever** | One way of finding candidates for the prompt | recall runs nine: core, vector, graph hop, plans, dates, recent, history, people, episodes | the retrieval *result* (what they return together) |
 
 ## Evaluation
 

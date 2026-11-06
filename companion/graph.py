@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import re
+import time
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -102,14 +103,26 @@ def _redact(messages: list, terms: list[str]) -> list:
             for m in messages if pattern.search(m.content)]
 
 
-def build_companion(store: MemoryStore, background: Background | None = None):
-    """The companion graph. With `background`, memory extraction runs on that worker."""
+def build_companion(store: MemoryStore, background: Background | None = None,
+                    trace: list[dict] | None = None):
+    """The companion graph. With `background`, memory extraction runs on that worker.
+
+    With `trace` (a list), every turn appends a dict showing what memory did (Lesson 18):
+    what recall found, the exact system prompt, timings, and what extraction decided.
+    The nodes fill it in as they run; a background job adds its part when it finishes."""
     llm = chat_model()
     to_redact: list[str] = []  # names forgotten by a background job, scrubbed on the next turn
 
+    def turn() -> dict:
+        return trace[-1] if trace else {}
+
     def recall(state: CompanionState, config: RunnableConfig):
         query = state["messages"][-1].content
+        started = time.perf_counter()
         found = store.recall(query, today=_today(config))
+        if trace is not None:
+            trace.append({"n": len(trace) + 1, "message": query, "recall": found,
+                          "recall_ms": round((time.perf_counter() - started) * 1000)})
         update = {"memory_context": format_context(found, _today(config))}
         if to_redact:
             terms = [to_redact.pop() for _ in range(len(to_redact))]
@@ -126,7 +139,14 @@ def build_companion(store: MemoryStore, background: Background | None = None):
         recent = state["messages"][-RECENT_TURNS:]
         while recent and not isinstance(recent[0], HumanMessage):  # start the window on a user turn
             recent = recent[1:]
-        return {"messages": [llm.invoke([system, *recent])]}
+        started = time.perf_counter()
+        reply = llm.invoke([system, *recent])
+        if trace is not None:
+            turn().update(system_prompt=system.content, window=len(recent),
+                          history=len(state["messages"]),
+                          respond_ms=round((time.perf_counter() - started) * 1000),
+                          usage=getattr(reply, "usage_metadata", None))
+        return {"messages": [reply]}
 
     def log(state: CompanionState, config: RunnableConfig):
         episode_id = config["configurable"]["thread_id"]
@@ -137,7 +157,11 @@ def build_companion(store: MemoryStore, background: Background | None = None):
     def route(state: CompanionState) -> str:
         *_, asked, user_msg, _reply = [None, *state["messages"]]
         question = getattr(asked, "content", "") or ""
-        return "remember" if worth_remembering(user_msg.content, question) else END
+        if worth_remembering(user_msg.content, question):
+            return "remember"
+        if trace is not None:
+            turn()["extraction"] = {"status": "skipped", "reason": "small talk: nothing to remember"}
+        return END
 
     def remember(state: CompanionState, config: RunnableConfig):
         episode_id, today = config["configurable"]["thread_id"], _today(config)
@@ -146,20 +170,40 @@ def build_companion(store: MemoryStore, background: Background | None = None):
                    for m in before]  # extract_memories marks the companion's lines as non-sources
         window = " ".join(text for _, text in earlier[-2:]) + " " + user_msg.content
         said, answered = user_msg.content, reply.content
+        seen = turn()
+        if trace is not None:
+            seen["extraction"] = {"status": "queued" if background is not None else "running",
+                                  "queued_at": time.time()}
 
         def job() -> list[str]:
+            started = time.perf_counter()
             # Candidates are read INSIDE the job: queued jobs run in order, so this one sees
             # what the previous one wrote.
-            extraction = extract_memories(
-                store.user_name, said, answered,
-                candidates=store.extraction_candidates(window, today=today),
-                entities=store.known_entities(),
-                today=today, earlier=earlier, companion=store.agent,
-            )
-            if os.environ.get("COMPANION_DEBUG_EXTRACT"):  # print the raw LLM extraction
-                print("     raw extraction:", extraction.model_dump_json(exclude_defaults=True))
-            log = store.apply(extraction, episode_id, today)
+            candidates = store.extraction_candidates(window, today=today)
+            entities = store.known_entities()
+            if trace is not None:
+                seen["extraction"].update(status="running", waited_ms=round(
+                    (time.time() - seen["extraction"]["queued_at"]) * 1000), candidates=candidates,
+                    entities=entities)
+            try:
+                extraction = extract_memories(
+                    store.user_name, said, answered, candidates=candidates, entities=entities,
+                    today=today, earlier=earlier, companion=store.agent,
+                )
+                if os.environ.get("COMPANION_DEBUG_EXTRACT"):  # print the raw LLM extraction
+                    print("     raw extraction:", extraction.model_dump_json(exclude_defaults=True))
+                llm_done = time.perf_counter()
+                log = store.apply(extraction, episode_id, today)
+            except Exception as e:
+                if trace is not None:
+                    seen["extraction"].update(status="failed", error=f"{type(e).__name__}: {e}")
+                raise
             to_redact.extend(store.forgotten_terms)
+            if trace is not None:
+                seen["extraction"].update(
+                    status="done", extracted=extraction.model_dump(exclude_defaults=True), log=log,
+                    llm_ms=round((llm_done - started) * 1000),
+                    write_ms=round((time.perf_counter() - llm_done) * 1000))
             return log
 
         if background is not None:
