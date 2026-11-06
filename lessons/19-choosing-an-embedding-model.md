@@ -321,11 +321,11 @@ check that the reply doesn't wait for memory, without assuming how fast the netw
 
 ## Next
 
-That's the end of the course. A good place to keep going: try `Qwen/Qwen3-Embedding-0.6B`. It
-scored 0.974 at a quarter of the size, so you'd add its profile and run the calibration and
-the scenarios.
+[Lesson 20](20-growing-the-life-graph.md) makes the life graph grow past the first hop: Logan
+-likes-> Minecraft, his friend's dog. It covers extraction scope, bounded multi-hop recall, a
+new ontology rule and edge provenance.
 
 <!-- nav -->
 ---
 
-[← Lesson 18: Watching memory work, one turn at a time](18-seeing-memory-work.md) · [All lessons](../README.md#lessons)
+[← Lesson 18: Watching memory work, one turn at a time](18-seeing-memory-work.md) · [All lessons](../README.md#lessons) · [Lesson 20: Growing the life graph past one hop →](20-growing-the-life-graph.md)

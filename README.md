@@ -7,7 +7,7 @@ AI companion — with every query's recorded output.
 ## Quick start
 
 ```bash
-cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–19
+cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–20
 docker compose up -d --build      # Neo4j 5 + APOC + Graph Data Science
 uv sync                           # Python 3.12 + the exact tested versions, into .venv
 ```
@@ -22,7 +22,7 @@ then use `.venv/bin/python` wherever these docs say `uv run python`.
 
 ## For architects of agent memory
 
-Lessons 8–19 build a companion that remembers a person's life, on Neo4j. Three documents
+Lessons 8–20 build a companion that remembers a person's life, on Neo4j. Three documents
 explain the design rather than the code:
 
 - **[Design decisions and tradeoffs](docs/design-decisions.md)**: 20 decisions (why Neo4j, why
@@ -69,11 +69,12 @@ level: which sense each term has there, and the choices made, with costs and alt
 | 17 | [A web UI](lessons/17-web-ui.md) | FastAPI + one HTML page: chat, life graph, decay curves, related entities; API tests with a fake LLM |
 | 18 | [Watching memory work](lessons/18-seeing-memory-work.md) | Per-turn trace: what recall found by retriever, the exact prompt, why each write happened, timings, persona lens, look-ahead clock, diary |
 | 19 | [Choosing an embedding model](lessons/19-choosing-an-embedding-model.md) | Compare models on your own data, query instructions, re-measure every threshold per model, vectors versioned by model, re-embed |
+| 20 | [Growing the life graph past one hop](lessons/20-growing-the-life-graph.md) | What deserves a node, edges from the person who has the preference, bounded two-hop recall, an `exclusive` ontology rule, edge provenance, orphan cleanup, re-extracting old conversations |
 
 **Architecture:** component, LangGraph, sequence, data-model and lifecycle diagrams for the
 agent and the companion are in [docs/architecture.md](docs/architecture.md).
 
-## LLM settings (lessons 5 and 7–19)
+## LLM settings (lessons 5 and 7–20)
 
 Any OpenAI-compatible endpoint with tool calling works (OpenAI, DeepInfra, OpenRouter,
 Ollama, LM Studio, vLLM...). Set in `.env`:
@@ -127,6 +128,7 @@ default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding 
 | `companion/insights.py` | Lesson 15 — graph embeddings (FastRP + kNN) and node similarity |
 | `companion/web.py`, `companion/static/` | Lessons 17–18 — web UI (FastAPI + one HTML page) and the per-turn memory trace |
 | `companion/embeddings.py`, `calibrate.py`, `reembed.py` | Lesson 19 — local or remote embeddings, per-model thresholds, measuring them, backfilling vectors |
+| `companion/reextract.py` | Lesson 20 — re-read stored conversations under the current extraction rules |
 | `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–17 (the *how*; design-decisions.md is the *why*) |
 | `tests/`, `pytest.ini` | Per-lesson tests and LLM evals (see *Tests and evals*) |
 | `docs/glossary.md` | Glossary of overlapping memory / graph / ontology terms, with a section per overloaded word |
@@ -184,5 +186,6 @@ uv run python -m companion.demo       # scripted two-session companion demo
 uv run python -m companion.scenarios  # Lesson 11–16 scenario tests (real LLM calls)
 uv run python -m companion.calibrate  # Lesson 19: measure thresholds for the embedding model in .env
 uv run python -m companion.reembed    # Lesson 19: backfill vectors after switching models
+uv run python -m companion.reextract --user Mark --dry-run  # Lesson 20: re-read old conversations
 uv run python graphrag.py "Who should own our new Rust performance work?"
 ```

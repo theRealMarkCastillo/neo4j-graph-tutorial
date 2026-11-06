@@ -35,14 +35,14 @@ memory is borrowed from at least six fields, and much of the confusion comes fro
 | 3 | Decide "Maya" = "my sister" = an existing node | entity resolution / record linkage | databases, data integration | 9 |
 | 4 | Map "girlfriend" to `partner`, refuse "places" as a relation | controlled vocabulary, canonicalization, [ontology](glossary.md#ontology) | knowledge representation | 12 |
 | 5 | Embed the memory text as a vector | text embedding; enables [semantic](glossary.md#semantic) (vector) search | information retrieval | 5, 19 |
-| 6 | Reinforce a reworded copy, retire a replaced fact | deduplication, supersession, bi-temporal data | databases (temporal DBs) | 9, 11 |
+| 6 | Reinforce a reworded copy, retire a replaced fact | deduplication, supersession, bi-temporal data, edge provenance | databases (temporal DBs) | 9, 11, 20 |
 | 7 | Store nodes and relationships | labeled property graph, reification, knowledge graph | graph databases | 3, 8 |
-| 8 | On the next message: vector search + graph hop + rules | hybrid retrieval, local GraphRAG | IR + graph traversal | 5, 10 |
+| 8 | On the next message: vector search + graph hop + rules | hybrid retrieval, local GraphRAG, bounded multi-hop traversal | IR + graph traversal | 5, 10, 20 |
 | 9 | Rank by match × importance × decay | reranking, forgetting curve | IR + psychology (Ebbinghaus; Generative Agents) | 10, 13 |
 | 10 | Infer "brother's daughter" = niece | inference / entailment | logic, ontologies | 12 |
 | 11 | Hide what this persona may not see | visibility rule, access control | security | 16 |
 | 12 | Render the memory block into the prompt | context engineering, RAG | LLM applications | 10 |
-| 13 | Nightly: group repeats into habits, prune trivia | consolidation, episodic → semantic memory | neuroscience / psychology | 13 |
+| 13 | Nightly: group repeats into habits, prune trivia | consolidation, episodic → semantic memory | neuroscience / psychology | 13, 20 |
 | 14 | Check it all with scripted conversations | evals, scenario tests | software testing + ML evaluation | 11, 18 |
 
 ---
@@ -478,6 +478,28 @@ need several runs.
 
   Most published scores are self-reported by vendors.
 - Online metrics from real users (corrections, "you already told me").
+
+
+<a id="d21"></a>
+### D21. Grow the graph past the user, with bounded walks and edge provenance
+
+**Chose:** named things people like or do are entities, and a preference's edge starts at
+the person who has it (`Logan -likes-> Minecraft`). Recall walks at most two links from each
+matched entity, never through the user or a protected entity, capped at 15 links. Edges list
+the memories that support them (`r.evidence`, only memories about both ends) and end when all
+of those are retired. Edges without `evidence` are never ended this way.
+([Lesson 20](../lessons/20-growing-the-life-graph.md))
+
+**Why:** a graph that only fans out from the user can't answer "who likes Minecraft?" or
+"how is my son's friend?". Unbounded walks turn "related" into "everything", and an edge with
+no link to its source outlives the fact that created it.
+
+**Costs:** more nodes for the extractor to resolve; one more property to keep in step on every
+retirement; older edges stay unprovenanced until a re-extraction touches them.
+
+**Alternatives:** keep everything past one hop as memory text only (simpler, but no graph
+queries); reify each edge as a node with `FROM` links (full provenance, double the nodes);
+an agent with a Cypher tool (D19 explains why the companion has none).
 
 ---
 

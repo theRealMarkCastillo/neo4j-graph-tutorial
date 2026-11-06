@@ -301,6 +301,8 @@ little each time, which is how it found a case the fixed fake data in the unit t
 - Facts don't fade, they go stale: check them instead of dropping them.
 - Measure thresholds on real examples, and pick a clustering rule that can't chain.
 
+> **Later, in [Lesson 20](20-growing-the-life-graph.md):** consolidation gets a fourth step that drops entities with no memory and no link left, and edges end when every memory that supported them is retired.
+
 ## Next
 
 [Lesson 14](14-production-hardening.md) makes the write path safe for failures and concurrency, and moves extraction to the background.

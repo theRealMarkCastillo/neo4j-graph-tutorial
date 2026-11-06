@@ -236,6 +236,8 @@ The next test found a second bug in the same snippet. Its variable `e` collided 
 silently became "this entity". A protected person then leaked through the entity hop and
 through "No longer true".
 
+> **Later, in [Lesson 20](20-growing-the-life-graph.md):** the entity hop here reads only each entity's relation *to the user*. Lesson 20 adds a bounded two-step walk over links between entities (Logan -likes-> Minecraft, found from either end) and a "How they connect" section in the prompt.
+
 ## Next
 
 The first demo passed easy cases. [Lesson 11](11-harder-scenarios-and-evals.md) writes harder multi-session conversations and turns them into evals.

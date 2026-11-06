@@ -207,6 +207,8 @@ ORDER BY ep.started_at
 2026-11-13T12:00Z, 6, FALSE
 ```
 
+> **Later, in [Lesson 20](20-growing-the-life-graph.md):** the extractor only made entities for people, pets, places and organizations, so "Logan loves Minecraft" never became an edge. Lesson 20 widens what deserves a node, adds `evidence` to edges so they end when their memories do, and lets `thing` and `activity` match in entity resolution.
+
 ## Next
 
 [Lesson 10](10-companion-recall-and-chat.md) builds the read path: recall those memories on every turn, and chat with a companion that uses them.

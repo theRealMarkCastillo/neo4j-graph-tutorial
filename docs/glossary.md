@@ -92,6 +92,7 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **Class / instance** | A type vs a member of it | `kind: 'person'` vs Maya | label vs node |
 | **Domain / range** | Allowed source / target types of a relation | `range`: `pet` → a pet, `lives_in` → a place | data types |
 | **Cardinality** | How many targets a relation may have | `lives_in`, `partner`: one at a time | uniqueness constraints |
+| **Exclusive relation types** | Two types that can't both hold between the same pair | `likes` and `dislikes`: the new one ends the other ([Lesson 20](../lessons/20-growing-the-life-graph.md)) | cardinality (other *targets*, not other *types*) |
 | **Symmetric / inverse / transitive property** | A→B implies B→A / B→A under another name / A→B→C implies A→C | `sibling` symmetric; `parent`↔`child`; SUBTYPE_OF is transitive | — |
 | **Inference / reasoning / entailment** | Deriving facts not stated | Kinship composition: brother's daughter → niece | LLM "reasoning" (statistical, not rule-based) |
 | **Open- vs closed-world assumption** | Missing fact = unknown vs missing fact = false | Our recall is closed-world in practice; the persona says "ask instead of guessing" to stay open-world in conversation | — |
@@ -152,7 +153,7 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **Pruning** | Deleting memories on purpose (data minimization) | dormant statuses/feelings with importance ≤ 3, after consolidation | decay (keeps them) |
 | **Reflection** | Generating higher-level insights from many memories (Generative Agents) | Not yet (a "where to go next" idea) | consolidation |
 | **Conflict / contradiction resolution** | Deciding which of two incompatible facts is current | `supersedes`, `invalidate`, cardinality rules | dedup |
-| **Provenance / lineage** | Where a fact came from | `(m)-[:FROM]->(Episode)`, `r.said` | history (versions) |
+| **Provenance / lineage** | Where a fact came from | `(m)-[:FROM]->(Episode)`, `r.said`, `r.evidence` (an edge's supporting memories, Lesson 20) | history (versions) |
 | **Grounding** | Answers based on supplied facts | Persona: "only rely on memories shown here" | citing |
 | **Hallucination** | Confident, unsupported output | Extractor rule: "never invent details" | a wrong memory (could be a true statement that changed) |
 | **Echo** (our term) | Storing the assistant's own recall as a new fact | Anti-echo rule, "context only" labels ([Lesson 11](../lessons/11-harder-scenarios-and-evals.md)) | dedup |

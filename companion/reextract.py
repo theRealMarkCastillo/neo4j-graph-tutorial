@@ -1,8 +1,8 @@
 """Read stored conversations again with the CURRENT extraction rules.
 
-    python -m companion.reextract --user Mark              every episode, oldest first
-    python -m companion.reextract --user Mark --dry-run    show what would be added, write nothing
-    python -m companion.reextract --user Mark --last 3     only the three most recent episodes
+    uv run python -m companion.reextract --user Mark              every episode, oldest first
+    uv run python -m companion.reextract --user Mark --dry-run    show what would be added, write nothing
+    uv run python -m companion.reextract --user Mark --last 3     only the three most recent episodes
 
 Memories are extracted when they're said, so a better prompt only helps from then on. After
 the prompt learns something new (named things someone likes became entities, Logan -likes->

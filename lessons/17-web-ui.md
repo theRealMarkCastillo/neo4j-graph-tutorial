@@ -142,6 +142,8 @@ Anyone who can reach it can read the memories. A real deployment needs at least:
 - Test the wiring with fakes and `TestClient`. Leave the model to its evals.
 - Logic duplicated in the frontend (the decay curve) needs a check against the backend.
 
+> **Later, in [Lesson 20](20-growing-the-life-graph.md):** the life graph shows each entity's memories on hover, and a faint "mentioned with" edge between entities a memory names together but no relation links.
+
 ## Next
 
 [Lesson 18](18-seeing-memory-work.md) shows what memory does on each turn: what recall found, the exact prompt, and why each write happened.

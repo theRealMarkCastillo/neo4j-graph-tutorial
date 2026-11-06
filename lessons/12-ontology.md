@@ -295,6 +295,8 @@ test is why the `_sync_superseded_relations` backstop was deleted.
 - **Infer** at read time when facts change often; materialize only when queries need the speed.
 - When a step "does nothing", print the raw LLM output before blaming the LLM.
 
+> **Later, in [Lesson 20](20-growing-the-life-graph.md):** a fifth rule, `exclusive` (likes ends dislikes of the same thing), and the ontology's hierarchy used to phrase edges as sentences in the prompt.
+
 ## Next
 
 [Lesson 13 — memory over time](13-memory-over-time.md): expiry, decay and consolidation.

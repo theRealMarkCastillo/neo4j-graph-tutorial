@@ -231,9 +231,9 @@ for the conversation where you described Logan. `companion.reextract` runs the e
 pass again over stored transcripts:
 
 ```bash
-.venv/bin/python -m companion.reextract --user Guest --dry-run   # show, write nothing
-.venv/bin/python -m companion.reextract --user Guest             # apply
-.venv/bin/python -m companion.reextract --user Guest --last 3    # recent episodes only
+uv run python -m companion.reextract --user Guest --dry-run   # show, write nothing
+uv run python -m companion.reextract --user Guest             # apply
+uv run python -m companion.reextract --user Guest --last 3    # recent episodes only
 ```
 
 The first dry run found **nothing**. The end-of-episode prompt (Lesson 11) says *don't repeat
@@ -342,8 +342,8 @@ Recall, [`tests/test_10_recall.py`](../tests/test_10_recall.py), and the UI,
 | `test_the_graph_shows_what_it_knows_and_links_co_mentioned_entities` | §7 hover texts, "mentioned with" |
 
 ```bash
-.venv/bin/python -m pytest tests/test_09_write_path.py tests/test_10_recall.py tests/test_17_web.py -q
-.venv/bin/python -m pytest -m llm tests/test_11_extraction_evals.py   # the prompt change, live
+uv run python -m pytest tests/test_09_write_path.py tests/test_10_recall.py tests/test_17_web.py -q
+uv run python -m pytest -m llm tests/test_11_extraction_evals.py   # the prompt change, live
 ```
 
 ## Takeaways
@@ -368,4 +368,4 @@ and grade what recall says a week later.
 <!-- nav -->
 ---
 
-[← Lesson 19: Choosing an embedding model](19-choosing-an-embedding-model.md) · [All lessons](../README.md#lessons)
+[← Lesson 19: Choosing an embedding model (and re-measuring everything that depends on it)](19-choosing-an-embedding-model.md) · [All lessons](../README.md#lessons)
