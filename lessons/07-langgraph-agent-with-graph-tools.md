@@ -49,7 +49,7 @@ sees the earlier messages. (Lessons 8–10 add *long-term* memory in Neo4j.)
 | `find_experts(skill)` | fixed, parameterized | people with a skill, strongest first, plus their active projects |
 | `person_profile(name)` | fixed | role, bio, skills, projects, manager, contacts |
 | `staffing_gaps()` | fixed | required skills only 0–1 people have (Lesson 1 query 9) |
-| `semantic_search(text)` | vector | Lesson 5's `embedded_vec` index |
+| `semantic_search(text)` | vector | Lesson 5's `embedded_vec` index (*semantic* = by meaning, [sense 2](../docs/glossary.md#semantic)) |
 | `run_cypher(query)` | free-form | read-only Cypher, schema in the docstring, 25-row cap |
 
 Every tool runs inside `session.execute_read(...)`, so Neo4j itself rejects writes:
@@ -114,6 +114,27 @@ What to notice:
 - It **chains**: profile → experts → a custom Cypher check.
 - For a question no fixed tool covers, it **wrote correct Cypher**, including the `:Role` nodes
   from Lesson 3, using only the schema in the docstring.
+
+## Concepts and design choices
+
+*Where this fits:* Not the memory pipeline itself: an agent that *uses* a graph, for contrast with the companion's workflow. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [agent](../docs/glossary.md#agent) | sense 1: an LLM choosing tools in a loop | the `agent` property naming a persona (Lesson 16) |
+| [graph](../docs/glossary.md#graph) | sense 2: the LangGraph state graph (control flow) | the Neo4j data graph |
+| [semantic](../docs/glossary.md#semantic) | sense 2: the `semantic_search` tool is vector search | semantic memory |
+| checkpointer | short-term memory: one conversation's messages per `thread_id` | long-term memory (Neo4j, from Lesson 8) |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| A ReAct agent with fixed tools plus a read-only Cypher tool | the model picks the right lookup; damage is limited by permissions | the model can pick the wrong tool (a trajectory eval checks) | a fixed workflow (the companion, D19); text-to-Cypher only | [D19](../docs/design-decisions.md#d19) |
+| Retrieval on demand (the model calls a tool) | no cost when the question doesn't need the graph | the model has to know to look | retrieve every turn in code (the companion, D10) | [D10](../docs/design-decisions.md#d10) |
+| In-memory checkpointer | no setup | conversations vanish on restart | SQLite / Postgres checkpointers | [D15](../docs/design-decisions.md#d15) |
 
 ## Test it — [`tests/test_07_agent.py`](../tests/test_07_agent.py)
 

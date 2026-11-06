@@ -141,8 +141,10 @@ A background job runs after every conversation (`close_episode`) and from `/cons
 ✎ (upkeep) pruned 1 dormant status/feeling memories
 ```
 
-This is the episodic → semantic step from the [glossary](../docs/glossary.md): many episodes
-become one piece of general knowledge.
+This is the episodic → semantic step from the [glossary](../docs/glossary.md#semantic)
+(*semantic memory*, sense 1: general knowledge, not vector search): many episodes become one
+piece of general knowledge. Consolidation finds the episodes to merge with vector similarity
+(sense 2), so both senses meet here.
 
 **Clustering uses complete linkage.** A memory joins a cluster only if it's similar to
 *every* member, not just one. I measured the threshold rather than guessing it:
@@ -182,6 +184,28 @@ repeats. For a few hundred short-lived memories that's still instant.
   as-of cut now applies only when a `today` is given.
 - **A closed episode whose summary failed was left open**, never linked by `NEXT`. That was a
   code-review leftover, fixed here with a test.
+
+## Concepts and design choices
+
+*Where this fits:* Steps 9 and 13: decay in ranking, validity at read time, consolidation offline. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| valid time / transaction time | `valid_until`, `occurred_on` / `created_at`, `invalidated_at` | each other (the bi-temporal split) |
+| [forget](../docs/glossary.md#forget) | senses 3 and 4: decay ranks lower; pruning deletes trivia | hard delete (sense 1) |
+| [semantic](../docs/glossary.md#semantic) | sense 1: consolidation turns repeated *episodic* memories into one *semantic* habit | vector search |
+| consolidation | offline: patterns, lapsed plans, pruning | summarizing one conversation |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Three mechanisms for three questions about time | true? worth mentioning? stored this way? | three things to tune | one TTL that deletes; recency-only ranking | [D14](../docs/design-decisions.md#d14) |
+| Filter expiry at read time instead of a database TTL | history, follow-ups and consolidation still need expired items | every read filters | APOC TTL (right when deletion is the goal) | [D14](../docs/design-decisions.md#d14) |
+| An injectable clock | time-travel is a parameter, tests are deterministic | every function takes `today`/`now` | wall-clock time everywhere | [D20](../docs/design-decisions.md#d20) |
+| Complete-linkage clustering for habits | a cluster can't chain gym → climbing → hiking | threshold per embedding model (Lesson 19) | single linkage; LLM-only grouping; reflection | [D14](../docs/design-decisions.md#d14) |
 
 ## Test it — [`tests/test_13_time.py`](../tests/test_13_time.py)
 

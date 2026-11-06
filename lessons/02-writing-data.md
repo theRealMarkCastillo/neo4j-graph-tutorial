@@ -143,6 +143,25 @@ The `Go` skill survives — deleting Hal doesn't touch his neighbors.
 
 ---
 
+## Concepts and design choices
+
+*Where this fits:* Writing the graph: what the memory write path (steps 3, 6, 7) is built from. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| MERGE | find-or-create: the basis of identity (one Maya across 100 conversations) | an UPSERT on a key; MERGE matches the whole pattern |
+| [schema](../docs/glossary.md#schema) | sense 1: constraints and indexes | a Pydantic schema (Lesson 9) or an ontology (Lesson 12) |
+| [index](../docs/glossary.md#index) | sense 1: a lookup index on properties | a vector index (Lesson 5) |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| MERGE on anything with identity, backed by a uniqueness constraint | idempotent writes; reruns don't duplicate | MERGE without a constraint can still race and create two nodes | CREATE plus application-side checks; content-hash keys | [D7](../docs/design-decisions.md#d7) |
+| Batch with UNWIND | one round trip for many rows | one large transaction to retry if it fails | per-row writes; `neo4j-admin database import` for bulk loads | [D16](../docs/design-decisions.md#d16) |
+
 ## Test it — [`tests/test_02_writing.py`](../tests/test_02_writing.py)
 
 Testing writes against a real database without leaving anything behind: run them in a

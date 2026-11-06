@@ -75,6 +75,25 @@ Sage: A beagle! That is such wonderful news. Biscuit is an adorable name ...
   plan flat. "+30d" was cut off at the right edge, so the chart's margin was widened.
 - Ending the session saved the diary summary.
 
+## Concepts and design choices
+
+*Where this fits:* All steps, seen from outside: a thin API over the same store. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [graph](../docs/glossary.md#graph) | sense 1 drawn as sense 3: the life graph as a picture | the LangGraph |
+| fake (test double) | a working stand-in LLM for API tests | a mock that checks calls |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| A thin FastAPI app reusing `MemoryStore` and the companion graph | every rule (privacy, boundaries, decay) applies unchanged | a Python server to run | a separate API layer re-implementing rules | [D17](../docs/design-decisions.md#d17) |
+| One HTML page, no build step | readable source for learners | not a production front end | React/Vue SPA | [D19](../docs/design-decisions.md#d19) |
+| Local only, no auth | a teaching tool on your machine | not safe on a network (the lesson lists what's missing) | auth, TLS, rate limits | [D17](../docs/design-decisions.md#d17) |
+
 ## Test it — [`tests/test_17_web.py`](../tests/test_17_web.py)
 
 ```bash

@@ -112,6 +112,26 @@ In this repo, `/related <name>` in the terminal chat uses FastRP, and `/related`
 lists the strongest pairs. Lesson 17's web page shows them too. They're **suggestions**, not
 facts: the companion doesn't store "Cy is Ana's friend" because embeddings put them close.
 
+## Concepts and design choices
+
+*Where this fits:* Not on the chat path: graph analytics that *suggest* connections in the life graph. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [embedding](../docs/glossary.md#embedding) | sense 2: a graph embedding (FastRP) from a node's neighbourhood | a text embedding (meaning) |
+| [similarity](../docs/glossary.md#similarity-and-score) | senses 3 and 4: kNN score and Jaccard | the vector index score |
+| [projection](../docs/glossary.md#graph) | sense 4: an in-memory GDS graph per user | the stored graph |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Suggestions, not stored facts | an embedding being close isn't evidence | a feature users must read critically | store inferred links (risky) | [D9](../docs/design-decisions.md#d9) |
+| FastRP + kNN, and node similarity side by side | structural vs explainable views of "related" | two methods to explain | node2vec, GNNs (more power, more machinery) | [D12](../docs/design-decisions.md#d12) |
+| Project only what's safe, per user, and drop it | nothing sensitive or protected leaks into results | projection cost on every call | one global projection (faster, leakier) | [D17](../docs/design-decisions.md#d17) |
+
 ## Test it
 
 ```bash

@@ -7,10 +7,15 @@ Every user message triggers one recall that combines five sources:
 | Source | How | Why |
 |---|---|---|
 | **Core profile** | all boundaries + top 8 facts/preferences (importance ≥ 6) | always know who they are and what to avoid |
-| **Semantic** | `memory_vec` top 50 → re-ranked, top 8 | what's relevant to *this* message |
+| **Semantic** (vector) | `memory_vec` top 50 → re-ranked, top 8 | what's relevant to *this* message |
 | **Entity hop** | names/aliases in the message + `entity_vec`, then `(m)-[:ABOUT]->(e)` | "how's my sister?" pulls everything about Maya |
 | **Follow-ups** | open plans due within ±14 days | proactive "how did it go?" |
 | **Recent episodes** | last 3 summaries + mood | continuity between sessions |
+
+> **Term:** *Semantic* in this table is the retriever's name: it finds memories by vector
+> similarity ([semantic, sense 2](../docs/glossary.md#semantic)), and returns events and
+> feelings as readily as facts. It isn't *semantic memory* (sense 1). The core profile is the
+> closest thing to semantic memory here.
 
 Semantic re-ranking (the "generative agents" recipe) mixes how well a memory matches the
 message with how important and how recent it is. Lesson 13 replaced the original Cypher
@@ -187,6 +192,30 @@ The first run (before these fixes) showed five problems. Each one is now handled
 | Both episodes dated with the real clock | `start_episode(on=...)` for simulated dates |
 | Finished plan still in "Relevant memories" | skip `status = 'done'` in recall |
 | The ex appeared in the people list | exclude entities a boundary is `ABOUT` |
+
+## Concepts and design choices
+
+*Where this fits:* Steps 8, 9 and 12: hybrid recall, ranking, and the memory block in the prompt. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [recall](../docs/glossary.md#recall) | sense 1: our `recall()`, run before every reply | the recall@k metric; MemGPT's *recall memory* |
+| [semantic](../docs/glossary.md#semantic) | sense 2: the **Semantic** row is the vector retriever, and can return events and feelings too | semantic memory (facts only) |
+| [core profile](../docs/glossary.md#profile) | sense 1: boundaries + top facts, always in the prompt | an embedding profile; LangMem's profile memory |
+| [re-ranking](../docs/glossary.md#rerank-and-relevance) | sense 1: our formula, match × importance × recency | a cross-encoder reranker (Lesson 18) |
+| [graph](../docs/glossary.md#graph) | sense 2 for `companion/graph.py` (LangGraph); sense 1 for recall's hops | each other |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Recall every turn, in code, from several retrievers | the companion notices plans and boundaries nobody asked about | every turn pays for recall, even "hi" | a `search_memory` tool the model calls when it wants | [D10](../docs/design-decisions.md#d10) |
+| Vector + graph hop (hybrid sense 2) | "how's my sister?" reaches everything about Maya | no keyword retrieval | add BM25 and rank fusion | [D11](../docs/design-decisions.md#d11) |
+| A transparent ranking formula | explainable and unit-testable | hand-picked weights | cross-encoder or learned ranking | [D12](../docs/design-decisions.md#d12) |
+| Labelled plain-text sections in the prompt | section names tell the model *why* each item is there | wording changes behaviour; re-run scenarios | JSON blocks; an LLM-written summary | [D13](../docs/design-decisions.md#d13) |
+| A fixed LangGraph workflow | predictable, testable memory behaviour | no adaptive retrieval mid-turn | a ReAct agent with memory tools | [D19](../docs/design-decisions.md#d19) |
 
 ## Test it — [`tests/test_10_recall.py`](../tests/test_10_recall.py)
 

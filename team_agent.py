@@ -18,7 +18,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from neo4j import GraphDatabase, unit_of_work
 
-from config import EMBED_MODEL, NEO4J_AUTH, NEO4J_URI, chat_model
+from config import LOCAL_EMBED_MODEL, NEO4J_AUTH, NEO4J_URI, chat_model
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
 _embedder = None
@@ -95,7 +95,7 @@ def staffing_gaps() -> str:
 def semantic_search(text: str) -> str:
     """Find people/projects whose descriptions are closest in meaning to the text."""
     global _embedder
-    _embedder = _embedder or TextEmbedding(EMBED_MODEL)
+    _embedder = _embedder or TextEmbedding(LOCAL_EMBED_MODEL)
     vector = next(_embedder.embed([text])).tolist()
     return json.dumps(read(
         """

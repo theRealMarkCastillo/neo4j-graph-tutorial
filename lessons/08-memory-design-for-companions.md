@@ -21,6 +21,12 @@ Plus two things that aren't single memories:
 
 ## Why graph + vectors (not just a vector store)
 
+This is the project's central choice. [Design decisions D1–D2](../docs/design-decisions.md#d1)
+compare it with Postgres + pgvector, a vector DB only, RDF, and managed memory services
+(Mem0, Zep/Graphiti, Letta, LangMem). The kinds of memory in the table above come from
+psychology: *semantic* memory here means general facts
+([sense 1](../docs/glossary.md#semantic)), not vector search.
+
 | Need | Vectors alone | Graph + vectors |
 |---|---|---|
 | "How's my sister?" → find Maya | ✅ fuzzy match | ✅ alias "my sister" → Maya, then hop |
@@ -62,7 +68,8 @@ Design choices, and where they come from in earlier lessons:
   **retired, not deleted**, so history survives ("Alex used to live in Portland").
 - **`user` property on every node** scopes all queries and vector searches to one person.
 - **Three vector indexes** (Lesson 5): `memory_vec`, `entity_vec`, `episode_vec` (384-dim,
-  local `bge-small` model, no API key).
+  local `bge-small` model, no API key). Lesson 19 adds a second set per embedding model, such
+  as Qwen3-Embedding-8B with 4096 dims.
 
 ## Design principles for companion memory
 
@@ -92,6 +99,30 @@ d = GraphDatabase.driver(config.NEO4J_URI, auth=config.NEO4J_AUTH); ensure_schem
 ```cypher
 SHOW INDEXES YIELD name, type WHERE name IN ['memory_vec','entity_vec','episode_vec','memory_user_kind']
 ```
+
+## Concepts and design choices
+
+*Where this fits:* The design of every step: what to remember, and how it's shaped in the graph. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [semantic](../docs/glossary.md#semantic) | sense 1: semantic *memory* = facts and preferences | semantic search (vector similarity) |
+| episodic / prospective / procedural | events and conversations / plans / boundaries and the persona | the `Episode` node (one conversation, a unit of episodic memory) |
+| [schema](../docs/glossary.md#schema) | sense 1: the graph's shape (labels, properties, indexes) | the ontology (meaning, Lesson 12) |
+| bi-temporal | two time axes: when it's true vs when we learned it | versioning alone |
+| [knowledge graph](../docs/glossary.md#knowledge-graph) | senses 1 and 4: the life graph, with validity times | the database |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Neo4j for graph and vectors together | biography is relational and changes over time | Cypher and graph ops skills | vector DB only; Postgres + pgvector; a managed memory service | [D1](../docs/design-decisions.md#d1) |
+| Memory = sentence node `ABOUT` entities, plus a life graph | readable in the prompt, traversable in the graph | two representations to keep consistent | triples only; one profile document; raw transcripts | [D2](../docs/design-decisions.md#d2) |
+| `user` on every node, one database | works on Community, one query for all users | a missed filter leaks data | a database per user; access control in the server | [D4](../docs/design-decisions.md#d4) |
+| Retire, don't delete (except on request) | history and "why did it say that?" | every read filters current versions | overwrite in place; event sourcing | [D8](../docs/design-decisions.md#d8) |
+| Boundaries as query filters | a prompt rule is a suggestion, a query filter is a guarantee | each read path must apply it | prompt-only rules; database-level security | [D17](../docs/design-decisions.md#d17) |
 
 ## Test it — [`tests/test_08_memory_schema.py`](../tests/test_08_memory_schema.py)
 

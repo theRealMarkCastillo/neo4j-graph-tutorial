@@ -9,10 +9,17 @@ Rules the fixtures enforce:
   use their own `pytest` user, wiped before and after.
 - A test whose lesson you haven't done yet is SKIPPED with a reason, not failed.
 """
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# The tests run on the local embedding model (Lesson 19): offline, fast, and the thresholds
+# they pin down are bge-small's. Its vectors live apart from a remote model's, so this is
+# safe even when your chats use EMBED_BASE_URL. Opt in with TEST_REMOTE_EMBEDDINGS=1.
+if not os.getenv("TEST_REMOTE_EMBEDDINGS"):
+    os.environ["EMBED_BASE_URL"] = ""  # set before config loads .env, which won't override it
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # import config, companion, ...
 

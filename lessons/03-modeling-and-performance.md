@@ -119,6 +119,26 @@ more specific relationship types so queries only expand the slice they need.
 
 ---
 
+## Concepts and design choices
+
+*Where this fits:* Modeling: the choice behind the memory data model (step 7). The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| reification | turning a relationship into a node so it can have properties and links | a relationship with properties (enough when nothing points *at* it) |
+| supernode | a node with very many relationships; the `User` node becomes one | a hub in network science (same idea) |
+| [PROFILE](../docs/glossary.md#profile) | sense 5: Cypher's executed query plan | the core profile (Lesson 10) or an embedding profile (Lesson 19) |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Model a memory as a node, not a relationship (3.2 → Lesson 8) | a memory concerns several entities and is itself referenced (`SUPERSEDES`, `FROM`) | more nodes and hops than a direct edge | facts as edges with properties (Graphiti's style); triples only | [D2](../docs/design-decisions.md#d2) |
+| Shared entity nodes instead of string properties (3.1) | "who else is in my life?" becomes a hop; aliases resolve to one node | entity resolution becomes your problem (Lesson 9) | denormalized strings on each memory | [D7](../docs/design-decisions.md#d7) |
+| Parameters, never string-built queries | plan caching and no Cypher injection | slightly more code | string formatting (unsafe) | [D17](../docs/design-decisions.md#d17) |
+
 ## Test it — [`tests/test_03_modeling.py`](../tests/test_03_modeling.py)
 
 Tests can check *how* a query runs, not just what it returns. `EXPLAIN` gives the plan

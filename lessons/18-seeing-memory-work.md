@@ -216,6 +216,28 @@ still listed a month later. It only lapses when the end-of-episode upkeep runs
 `test_the_recall_preview_only_looks` checks that, and it fails if `touch=False` is removed
 (checked).
 
+## Concepts and design choices
+
+*Where this fits:* Every step made visible for one turn: the read, the prompt and the write, with reasons. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| trace | one record per turn of what each step did, with timings | a log (lines in time order) |
+| retriever | one of recall's nine ways of finding candidates | the retrieval result |
+| [relevance / reranker](../docs/glossary.md#rerank-and-relevance) | senses 2 and 3: a cross-encoder judges whether a memory is about the message | our ranking formula (sense 1) |
+| [score vs cosine](../docs/glossary.md#similarity-and-score) | the write log labels which scale each number uses | one universal similarity scale |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Record the trace where the work happens | the trace shows what the model saw, not a re-computation | trace plumbing through every node | recompute for display; external tracing only | [D20](../docs/design-decisions.md#d20) |
+| Label weak matches, don't drop them, and don't tell the model | dropping hid an inference; the prompt label misled the model | the prompt still carries weak matches | drop below a cut-off; label in the prompt | [D12](../docs/design-decisions.md#d12) |
+| Read-only inspection (`touch=False`) | looking doesn't change what it measures | two code paths through recall | inspect the live path | [D20](../docs/design-decisions.md#d20) |
+| An in-process trace, not OpenTelemetry/LangSmith | zero setup, shown in the page | not aggregated across users or time | export the same fields to a tracing tool in production | [D20](../docs/design-decisions.md#d20) |
+
 ## Test it — [`tests/test_18_inspect.py`](../tests/test_18_inspect.py)
 
 ```bash
@@ -253,5 +275,5 @@ A trace that is wrong teaches the wrong thing, so it gets tests like any other f
 
 ## Next
 
-That's the end of the course. A good place to keep going: the reasons and timings in the trace are
-what you'd send to tracing tools like LangSmith or OpenTelemetry in production.
+[Lesson 19](19-choosing-an-embedding-model.md) replaces the small local embedding model behind
+"dogs" with a better remote one, and re-measures every threshold that depended on it.

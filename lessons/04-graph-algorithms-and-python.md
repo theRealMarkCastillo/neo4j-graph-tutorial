@@ -141,6 +141,25 @@ Three driver patterns:
 
 ---
 
+## Concepts and design choices
+
+*Where this fits:* Analytics over the graph, used again for the life graph in Lesson 15. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [projection](../docs/glossary.md#graph) | sense 4: an in-memory copy of part of the graph for GDS | a Cypher map projection `m {.id, .text}` |
+| [node similarity](../docs/glossary.md#similarity-and-score) | sense 4: Jaccard over shared neighbours | cosine similarity of embeddings |
+| [memory](../docs/glossary.md#memory) | sense 5: RAM used by GDS projections | the companion's memories |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Run algorithms inside Neo4j with GDS | no data export, results written back as properties | projections use RAM and must be dropped | export to NetworkX / igraph / Spark GraphFrames | [D1](../docs/design-decisions.md#d1) |
+| Stream results while exploring, write back only what queries need | nothing stale stored by accident | write-back must be re-run when the graph changes | always write back; compute on every request | [D14](../docs/design-decisions.md#d14) |
+
 ## Test it — [`tests/test_04_algorithms_and_python.py`](../tests/test_04_algorithms_and_python.py)
 
 - **Design for tests.** `add_skill(tx, ...)` takes a transaction, so the test hands it a

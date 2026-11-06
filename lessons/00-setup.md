@@ -44,6 +44,25 @@ python3 -m venv .venv
 
 All scripts read connection settings and keys from `.env` via [`config.py`](../config.py).
 
+## Concepts and design choices
+
+*Where this fits:* Infrastructure under every step: one local Neo4j with APOC and GDS. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| Neo4j Community | the free, single-database edition, in Docker | Enterprise (several databases, fine-grained access, clustering) or Aura (managed cloud) |
+| APOC / GDS | plugins: utility procedures / graph algorithms (Lessons 4, 15) | built-in Cypher |
+| test (unit / db / llm) | three layers, from free and instant to paid and variable | one undifferentiated test suite |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Neo4j 5.26 Community in Docker, data in named volumes | free, reproducible, the same on every laptop | no multi-database or access control features (see D4, D17) | Aura (no ops, costs money), Enterprise (isolation features), Neo4j Desktop | [D1](../docs/design-decisions.md#d1) |
+| Tests in three layers from Lesson 0 | cheap checks run constantly; paid LLM evals only on demand | LLM behaviour is only checked when you opt in | one suite, or LLM-as-judge on everything | [D20](../docs/design-decisions.md#d20) |
+
 ## Test it
 
 Every lesson from here on has tests in [`tests/`](../tests). Run them early and often:

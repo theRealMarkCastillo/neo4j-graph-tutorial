@@ -37,7 +37,7 @@ def visible(v: str) -> str:
 - `agent IS NULL` keeps memories from before personas existed visible to all, so **old data
   still works without a migration**.
 
-The rule goes into recall (core, semantic, history, entity hop, follow-ups, yearly dates,
+The rule goes into recall (core, semantic (the vector retriever), history, entity hop, follow-ups, yearly dates,
 "recently"), the people list, inferred relatives, `memories()` and the timeline. It also goes
 into the duplicate check, and three places that are easy to miss:
 
@@ -93,6 +93,27 @@ Coach: I'd love to! ... are you looking to push your distance a bit as we look t
 Coach used the shared plan without being told, and never brought up the panic attacks. The
 greeting didn't refer to the earlier conversation either: Coach's diary is empty. All four
 checks passed.
+
+## Concepts and design choices
+
+*Where this fits:* Step 11: who may see what when several personas share one memory. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [agent](../docs/glossary.md#agent) | sense 2: the `agent` property = which persona heard it | an LLM agent (sense 1) |
+| private memory | visible only to the persona that heard it | sensitive (a stricter category) |
+| visibility rule | Cypher predicates pasted into every read | database access control |
+| [semantic recall](../docs/glossary.md#semantic) | sense 2: the vector retriever, filtered like every other | semantic memory |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| One shared store with per-persona visibility | personas know the same life; secrets stay private | every read path must apply the rule (mutation checks guard it) | a separate store per persona; database-level privileges | [D17](../docs/design-decisions.md#d17) |
+| Hide derived data too (summaries, patterns, entities) | derived data repeats the private fact | harder to reason about | hide source memories only (leaks) | [D17](../docs/design-decisions.md#d17) |
+| Boundaries are shared regardless of who heard them | safety beats privacy here | a persona learns a boundary exists | per-persona boundaries | [D17](../docs/design-decisions.md#d17) |
 
 ## Test it — [`tests/test_16_personas.py`](../tests/test_16_personas.py)
 

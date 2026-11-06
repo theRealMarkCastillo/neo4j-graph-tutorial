@@ -10,7 +10,7 @@ from fastembed import TextEmbedding
 from neo4j import GraphDatabase
 
 import config
-from config import LLM_MODEL, EMBED_MODEL as MODEL, NEO4J_AUTH as AUTH, NEO4J_URI as URI
+from config import LLM_MODEL, LOCAL_EMBED_MODEL as MODEL, NEO4J_AUTH as AUTH, NEO4J_URI as URI
 
 # Step 1 finds the top-k semantically similar nodes; step 2 walks 1 hop out from each and
 # turns every relationship into a plain-English fact the LLM can read.

@@ -1,5 +1,9 @@
 # Lesson 5 — Vector search and GraphRAG
 
+> This lesson is steps 5 and 8 of the [memory pipeline](../docs/design-decisions.md#the-pipeline-as-concepts):
+> embedding text, and *hybrid* retrieval: vectors find where to start, the graph expands from there.
+> Why vectors live inside Neo4j instead of a separate vector database: [D1](../docs/design-decisions.md#d1).
+
 ## 5.1 — Vector index basics (toy example)
 
 Three-number "embeddings" — imagine the axes *cute animal*, *small*, *vehicle*:
@@ -42,6 +46,10 @@ Vector index 'embedded_vec' is online
 ```
 
 ## 5.3 — Semantic search in the Browser
+
+> **Term:** *semantic search* here means search by meaning through embeddings
+> ([semantic, sense 2](../docs/glossary.md#semantic)). It has nothing to do with *semantic
+> memory* (general facts, Lesson 8) or the *Semantic Web* (RDF/OWL).
 
 "What's closest in *meaning* to Eve's bio?" (data scientist, ranking models, A/B tests on search)
 
@@ -141,6 +149,28 @@ is level 4, Finn's is level 2**. (The generated-answer step was not run in the o
 session because no API key was set.)
 
 ---
+
+## Concepts and design choices
+
+*Where this fits:* Steps 5 and 8: embed text, then search by vector and expand along the graph. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [semantic](../docs/glossary.md#semantic) | sense 2: *semantic search* = vector similarity of embeddings | semantic *memory* (general facts, Lesson 8) |
+| [embedding](../docs/glossary.md#embedding) | sense 1: a text embedding from `bge-small` (384 numbers) | a graph embedding (Lesson 15) |
+| [score](../docs/glossary.md#similarity-and-score) | the vector index's 0–1 score, (1 + cosine) / 2 | raw cosine (−1 to 1) |
+| [hybrid](../docs/glossary.md#hybrid) | sense 2: vector + graph | vector + keyword (the usual meaning in RAG products) |
+| GraphRAG | the *local* style: vector entry points, then traversal | Microsoft GraphRAG's *global* community summaries |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Vector index inside Neo4j | one query goes from a vector hit to connected facts | fewer vector features than a specialist vector DB | Qdrant, Pinecone, pgvector next to the graph | [D1](../docs/design-decisions.md#d1) |
+| A small local embedding model | no key, no cost, offline | weaker separation of related and unrelated text (measured in Lesson 19) | a remote model such as Qwen3-Embedding-8B | [D5](../docs/design-decisions.md#d5) |
+| Vector + graph, no keyword search | embeddings find where to start, the graph reasons from there | rare exact words can be missed | add a full-text (BM25) index and fuse the ranks | [D11](../docs/design-decisions.md#d11) |
 
 ## Test it — [`tests/test_05_vectors_and_graphrag.py`](../tests/test_05_vectors_and_graphrag.py)
 

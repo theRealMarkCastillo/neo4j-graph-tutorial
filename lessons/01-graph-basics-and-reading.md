@@ -188,6 +188,25 @@ As a picture, return `path = (m)-[:MANAGES]->(e)-[:WORKS_ON]->(pr)`: 6 nodes, 5 
 
 ---
 
+## Concepts and design choices
+
+*Where this fits:* Reading the graph: the traversal that recall (step 8) relies on. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [graph](../docs/glossary.md#graph) | sense 1: the Neo4j data graph of nodes and relationships | a LangGraph state graph (Lesson 7) |
+| traversal / hop | following stored relationships from node to node | a SQL join (computed at query time from keys) |
+| Cypher | Neo4j's pattern-matching query language; GQL (ISO, 2024) is close to it | SPARQL (RDF), Gremlin (TinkerPop) |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| A property graph queried with Cypher patterns | multi-hop and variable-length questions read like the picture you'd draw | a second query language next to SQL | Postgres recursive CTEs; Apache AGE (openCypher on Postgres); SPARQL over RDF | [D1](../docs/design-decisions.md#d1) |
+| Variable-length paths (`*1..3`) for open-ended questions | no need to know the depth in advance | unbounded patterns can explode on dense graphs: always cap the length | fixed-depth queries; precomputed relationships | [D11](../docs/design-decisions.md#d11) |
+
 ## Test it — [`tests/test_01_reading.py`](../tests/test_01_reading.py)
 
 Each test pins one query's answer on the seed graph:

@@ -14,22 +14,14 @@ from functools import partial
 
 import numpy as np
 
-from fastembed import TextEmbedding
-
-from config import COMPANION_NAME, EMBED_MODEL, RERANK_MODEL
+from config import COMPANION_NAME, RERANK_MODEL
 from companion import clock, decay, ontology
+from companion.embeddings import PROFILE, embed, embed_for_clustering  # Lesson 19: local or remote, with its thresholds
 from companion.models import Extraction
 from companion.schema import ensure_schema
 
-_embedder: TextEmbedding | None = None
 _reranker = None
 _ontology_loaded = False
-
-
-def embed(texts: list[str]) -> list[list[float]]:
-    global _embedder
-    _embedder = _embedder or TextEmbedding(EMBED_MODEL)
-    return [v.tolist() for v in _embedder.embed(texts)]
 
 
 def relevance(query: str, texts: list[str]) -> list[float]:
@@ -102,26 +94,28 @@ def _to_date(value: str | None) -> dt.date | None:
         return None
 
 
+# Similarity thresholds belong to the embedding model (Lesson 19): companion/embeddings.py has
+# one set per model. The numbers and measurements in these comments are bge-small's.
 # Duplicate threshold on Neo4j's 0-1 rescaled cosine (0.975 ≈ raw cosine 0.95).
-DUPLICATE_SCORE = 0.975
+DUPLICATE_SCORE = PROFILE.duplicate
 # A memory this close to one the user deleted in the same episode is not stored again.
-FORGOTTEN_SCORE = 0.90
+FORGOTTEN_SCORE = PROFILE.forgotten
 # Expired situational memories stay visible as "Recently ..." for this long.
 RECENT_HOURS = 24
 # Consolidation (Lesson 13)
 LAPSE_AFTER_DAYS = 14        # an open plan this far past due stops being followed up
 PATTERN_WINDOW_DAYS = 60     # look for repeats among memories this recent
-PATTERN_SIMILARITY = 0.82    # EVERY pair in a cluster at least this similar. Measured: gym sentences
+PATTERN_SIMILARITY = PROFILE.pattern  # EVERY pair in a cluster at least this similar. Measured: gym sentences
                              # 0.83-0.91; rock climbing 0.78-0.82 to them, so it stays out. The
                              # writer LLM can still decline a cluster that isn't a habit.
 PATTERN_MIN = 3              # this many similar memories make a pattern
 PRUNE_MAX_IMPORTANCE = 3     # only trivia is ever deleted
 # Entity match threshold when names differ ("Mom" vs "my mother").
-ENTITY_MATCH_SCORE = 0.93
+ENTITY_MATCH_SCORE = PROFILE.entity_match
 # ...and the NAMES must also be similar (raw cosine of name-only embeddings). Without this,
 # "Seattle: the city where Riley now lives" matched "Boston: the city where Riley lives" —
 # the summaries dominate the embedding. Mom/mother 0.87, NYC/New York 0.93; Seattle/Boston 0.64.
-NAME_MATCH_MIN = 0.80
+NAME_MATCH_MIN = PROFILE.name_match
 # Sensitive memories (health, finances...) are recalled only when the message is clearly about
 # them: (near) the best vector match for this message, not just above a fixed score. Small
 # embedding models squeeze all scores into a narrow band (~0.63-0.80 here), so relative wins.
@@ -133,8 +127,10 @@ NAME_MATCH_MIN = 0.80
 # never dropped: the chat model can make the leap. They're labelled in the web UI's trace only
 # (in the prompt the label misled the model too: see format_context).
 RELEVANCE_MIN = -8.5
-SENSITIVE_MARGIN = 0.01
-SENSITIVE_FLOOR = 0.72
+SENSITIVE_MARGIN = PROFILE.sensitive_margin
+SENSITIVE_FLOOR = PROFILE.sensitive_floor
+# An entity this close to the message (index score) is looked up by the graph hop.
+ENTITY_HOP_SCORE = PROFILE.entity_hop
 
 # A memory about someone a boundary protects ("don't bring up Dana") is never recalled.
 # The user node is excluded: a topic boundary ("don't ask about my job") is ABOUT the user,
@@ -213,7 +209,7 @@ class MemoryStore:
             MERGE (u:Entity:User {id: $user})
             ON CREATE SET u.created_at = datetime()
             SET u.name = $name, u.user = $user, u.kind = 'self'
-            WITH u CALL db.create.setNodeVectorProperty(u, 'embedding', $vec)
+            WITH u CALL db.create.setNodeVectorProperty(u, $vprop, $vec)
             """,
             name=user_name, vec=embed([f"{user_name}, the user"])[0],
         )
@@ -222,7 +218,10 @@ class MemoryStore:
         """Run a query with $user and $now always set ($now: the conversation's clock).
 
         Inside `_write()` it joins that transaction; otherwise it's its own auto-committed one."""
-        params = {"user": self.user, "agent": self.agent, "now": now or clock.now_for(dt.date.today()), **params}
+        params = {"user": self.user, "agent": self.agent, "now": now or clock.now_for(dt.date.today()),
+                  # the active embedding model's vector property and indexes (Lesson 19)
+                  "vprop": PROFILE.prop, "memory_vec": PROFILE.index("memory_vec"),
+                  "entity_vec": PROFILE.index("entity_vec"), **params}
         tx = getattr(self._local, "tx", None)
         if tx is not None:
             return tx.run(query, **params).data()
@@ -306,7 +305,7 @@ class MemoryStore:
             """
             MATCH (ep:Episode {id: $ep})
             SET ep.ended_at = datetime(), ep.summary = $summary, ep.mood = $mood
-            WITH ep CALL db.create.setNodeVectorProperty(ep, 'embedding', $vec)
+            WITH ep CALL db.create.setNodeVectorProperty(ep, $vprop, $vec)
             """,
             ep=episode_id, summary=summary, mood=mood, vec=embed([summary])[0],
         )
@@ -346,14 +345,14 @@ class MemoryStore:
                   AND (toLower(e.name) IN $names OR any(a IN coalesce(e.aliases, []) WHERE toLower(a) IN $names))
                 // a real name before a placeholder that merely lists it
                 RETURN e.id AS id ORDER BY CASE WHEN toLower(e.name) = $name THEN 0 ELSE 1 END,
-                       vector.similarity.cosine(e.embedding, $vec) DESC LIMIT 1
+                       vector.similarity.cosine(e[$vprop], $vec) DESC LIMIT 1
                 """,
                 names=names, name=name.lower(), vec=vec,
             )
         if not hit and not new:
             candidates = self._q(
                 """
-                CALL db.index.vector.queryNodes('entity_vec', 50, $vec) YIELD node, score
+                CALL db.index.vector.queryNodes($entity_vec, 50, $vec) YIELD node, score
                 WHERE node.user = $user AND node.kind = $kind AND score >= $min
                 RETURN node.id AS id, [node.name] + coalesce(node.aliases, []) AS names ORDER BY score DESC
                 """,
@@ -367,7 +366,7 @@ class MemoryStore:
                 CREATE (e:Entity {id: $id, user: $user, name: $name, kind: $kind, summary: $summary,
                                   aliases: [a IN apoc.coll.toSet($aliases) WHERE toLower(a) <> toLower($name)],
                                   created_at: datetime(), updated_at: datetime()})
-                WITH e CALL db.create.setNodeVectorProperty(e, 'embedding', $vec)
+                WITH e CALL db.create.setNodeVectorProperty(e, $vprop, $vec)
                 """,
                 id=entity_id, name=name, kind=kind, summary=summary, aliases=list(aliases), vec=vec,
             )
@@ -398,7 +397,7 @@ class MemoryStore:
             SET e.name = $final, e.kind = $kind, e.summary = $summary, e.updated_at = datetime(),
                 e.aliases = [a IN apoc.coll.toSet(coalesce(e.aliases, []) + $aliases + $before + $incoming)
                              WHERE toLower(a) <> toLower($final)]
-            WITH e CALL db.create.setNodeVectorProperty(e, 'embedding', $vec)
+            WITH e CALL db.create.setNodeVectorProperty(e, $vprop, $vec)
             """,
             id=entity_id, final=final, kind=new_kind, summary=final_summary,
             aliases=list(aliases), before=[cur["name"]], incoming=[name] if keep_name else [],
@@ -630,7 +629,7 @@ class MemoryStore:
                 continue
             nearest = q(
                 """
-                CALL db.index.vector.queryNodes('memory_vec', 50, $vec) YIELD node, score
+                CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node, score
                 WHERE node.user = $user AND node.invalidated_at IS NULL
                   AND (node.valid_until IS NULL OR node.valid_until > $now)  // expired: say it again = new
                   AND """ + visible("node") + """
@@ -682,7 +681,7 @@ class MemoryStore:
                                   agent: $agent, private: $private,
                                   status: CASE WHEN $kind = 'plan' THEN 'open' ELSE null END,
                                   created_at: $now, access_count: 0})
-                WITH m CALL db.create.setNodeVectorProperty(m, 'embedding', $vec)
+                WITH m CALL db.create.setNodeVectorProperty(m, $vprop, $vec)
                 WITH m
                 CALL (m) { UNWIND $about AS eid MATCH (e:Entity {id: eid}) MERGE (m)-[:ABOUT]->(e) }
                 CALL (m) { MATCH (ep:Episode {id: $ep}) MERGE (m)-[:FROM]->(ep) }
@@ -726,7 +725,7 @@ class MemoryStore:
         (+ everything already taken from this episode, for the end-of-episode pass)."""
         return self._q(
             """
-            CALL db.index.vector.queryNodes('memory_vec', 50, $vec) YIELD node AS m, score
+            CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node AS m, score
             WHERE m.user = $user AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND coalesce(m.status, '') <> 'done'
               AND """ + visible("m") + """
             WITH m ORDER BY score DESC LIMIT $k  // filter first, then keep the top k
@@ -745,7 +744,7 @@ class MemoryStore:
               AND """ + visible("m") + """
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
             """,
-            k=k, vec=embed([text])[0], text=text, ep=episode_id or "",
+            k=k, vec=embed([text], query=True)[0], text=text, ep=episode_id or "",
             now=clock.now_for(today or dt.date.today()),
         )
 
@@ -793,7 +792,7 @@ class MemoryStore:
         today = today or dt.date.today()
         now = clock.now_for(today)
         q = partial(self._q, now=now)  # every query below sees the conversation's clock
-        vec = embed([query])[0]
+        vec = embed([query], query=True)[0]  # a message searched against memories (Lesson 19)
         # Core profile: every boundary + the most important stable facts and preferences.
         core = q(
             """
@@ -817,7 +816,7 @@ class MemoryStore:
         # Semantic: vector similarity re-ranked by importance and recency (feelings fade fast).
         semantic = q(
             """
-            CALL db.index.vector.queryNodes('memory_vec', 50, $vec) YIELD node AS m, score
+            CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node AS m, score
             WHERE m.user = $user AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND coalesce(m.status, '') <> 'done'
               AND (m.kind = 'boundary' OR """ + NOT_PROTECTED + """) AND """ + visible("m") + """
             WITH collect({m: m, score: score}) AS hits
@@ -843,9 +842,16 @@ class MemoryStore:
         # return something. Weak matches go after strong ones and are labelled in the prompt.
         # A current status ("at the gym" until 14:00) is never weak: it's context for any
         # message, like "Recently" below ("what am I doing?" scored -8.9 against it).
-        for m, r in zip(semantic, relevance(query, [m["text"] for m in semantic])):
-            m["relevance"] = round(r, 2)
-            m["weak"] = r < RELEVANCE_MIN and m["kind"] != "status"
+        # Lesson 19: a model whose scores DO separate (Qwen3-8B) decides with its own score,
+        # and the cross-encoder isn't needed (it called "how is my kid doing?" vs "Mark's son
+        # Logan attends Elk Grove Elementary" weak).
+        if PROFILE.weak_below is not None:
+            scores, cut = [m["score"] for m in semantic], PROFILE.weak_below
+        else:
+            scores, cut = relevance(query, [m["text"] for m in semantic]), RELEVANCE_MIN
+        for m, r in zip(semantic, scores):
+            m["relevance"] = round(r, 3 if PROFILE.weak_below is not None else 2)
+            m["weak"] = r < cut and m["kind"] != "status"
         semantic = sorted(
             ({**m, "rank": round(decay.rank(m["score"], m["importance"], m["kind"], m["age"]), 3),
               "stale": decay.is_stale(m["kind"], m["age"])} for m in semantic),
@@ -878,8 +884,8 @@ class MemoryStore:
                 AND any(n IN [e.name] + coalesce(e.aliases, []) WHERE size(n) > 2 AND toLower($q) CONTAINS toLower(n))
               RETURN e
               UNION
-              CALL db.index.vector.queryNodes('entity_vec', 50, $vec) YIELD node AS e, score
-              WITH e, score WHERE e.user = $user AND e.kind <> 'self' AND score >= 0.85
+              CALL db.index.vector.queryNodes($entity_vec, 50, $vec) YIELD node AS e, score
+              WITH e, score WHERE e.user = $user AND e.kind <> 'self' AND score >= $hop
               RETURN e ORDER BY score DESC LIMIT 3
               UNION  // "anyone in my family / at work...": everyone in that group of relations
               MATCH (:User {id: $user})-[r:RELATED]->(e:Entity) WHERE r.type IN $types AND r.until IS NULL
@@ -902,7 +908,7 @@ class MemoryStore:
             RETURN e.id AS id, e.name AS name, e.kind AS kind, e.summary AS summary, relation, memories
             LIMIT 12
             """,
-            q=query, vec=vec, types=group_types, inferred=inferred_ids,
+            q=query, vec=vec, hop=ENTITY_HOP_SCORE, types=group_types, inferred=inferred_ids,
         )
         for e in entities:  # same decay rule as semantic recall
             e["memories"] = [m for m in e["memories"]
@@ -975,7 +981,8 @@ class MemoryStore:
                 """,
                 ids=touched,
             )
-        return {"dormant": dormant, "relevance_min": RELEVANCE_MIN, "core": core, "semantic": semantic, "entities": entities, "people": people,
+        return {"dormant": dormant, "relevance_min": RELEVANCE_MIN if PROFILE.weak_below is None else PROFILE.weak_below,
+                "relevance_by": "cross-encoder" if PROFILE.weak_below is None else "vector score", "core": core, "semantic": semantic, "entities": entities, "people": people,
                 "followups": followups, "upcoming": upcoming, "history": history, "episodes": episodes,
                 "recent": recent}
 
@@ -1009,8 +1016,12 @@ class MemoryStore:
                   AND m.kind IN ['event', 'status', 'feeling'] AND NOT coalesce(m.sensitive, false)
                   AND NOT coalesce(m.private, false)  // a shared pattern must not be built from private memories
                   AND m.created_at > $now - duration({days: $days})
-                RETURN m.id AS id, m.text AS text, m.embedding AS vec ORDER BY m.created_at
+                  AND m[$vprop] IS NOT NULL  // not yet re-embedded for this model (Lesson 19)
+                RETURN m.id AS id, m.text AS text, m[$vprop] AS vec ORDER BY m.created_at
                 """, days=PATTERN_WINDOW_DAYS)
+            if PROFILE.cluster_instruction:  # this model groups better with an instruction (Lesson 19)
+                for r, v in zip(rows, embed_for_clustering([r["text"] for r in rows])):
+                    r["vec"] = v
             for group in _clusters(rows, PATTERN_SIMILARITY, PATTERN_MIN):
                 pattern = writer(self.user_name, [r["text"] for r in group], today)
                 if pattern is None:
@@ -1110,7 +1121,9 @@ class MemoryStore:
             MATCH (m:Memory {id: $id, user: $user})
             OPTIONAL MATCH (m)-[:FROM]->(ep:Episode)
             CREATE (t:Forgotten {user: $user, episode: coalesce(ep.id, ''), at: datetime()})
-            WITH m, m.id AS id, t CALL db.create.setNodeVectorProperty(t, 'embedding', m.embedding)
+            WITH m, m.id AS id, t
+            CALL (m, t) { WITH * WHERE m[$vprop] IS NOT NULL  // none yet if made before a model switch
+                          CALL db.create.setNodeVectorProperty(t, $vprop, m[$vprop]) }
             DETACH DELETE m RETURN id
             """,
             id=memory_id,
@@ -1119,7 +1132,9 @@ class MemoryStore:
     def _tombstones(self, episode_id: str | None) -> list:
         if not episode_id:
             return []
-        rows = self._q("MATCH (t:Forgotten {user: $user, episode: $ep}) RETURN t.embedding AS v", ep=episode_id)
+        # a tombstone from before an embedding-model switch has no vector for this model (Lesson 19)
+        rows = self._q("MATCH (t:Forgotten {user: $user, episode: $ep}) WHERE t[$vprop] IS NOT NULL "
+                       "RETURN t[$vprop] AS v", ep=episode_id)
         return [np.asarray(r["v"]) for r in rows]
 
     def forget_entity(self, name: str, known: dict[str, str] | None = None) -> dict | None:
@@ -1168,7 +1183,7 @@ class MemoryStore:
             self._q(
                 """
                 MATCH (ep:Episode {id: $id}) SET ep.summary = $text
-                WITH ep CALL db.create.setNodeVectorProperty(ep, 'embedding', $vec)
+                WITH ep CALL db.create.setNodeVectorProperty(ep, $vprop, $vec)
                 """,
                 id=ep["id"], text=text, vec=embed([text])[0],
             )
@@ -1186,7 +1201,7 @@ class MemoryStore:
             self._q(
                 """
                 MATCH (e:Entity {id: $id}) SET e.summary = $summary, e.aliases = $aliases
-                WITH e CALL db.create.setNodeVectorProperty(e, 'embedding', $vec)
+                WITH e CALL db.create.setNodeVectorProperty(e, $vprop, $vec)
                 """,
                 id=other["id"], summary=summary, aliases=[a for a in other["aliases"] if not pattern.search(a)],
                 vec=embed([f"{other['name']} ({other['kind']}): {summary}"])[0],

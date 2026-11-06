@@ -43,6 +43,25 @@ querying; re-embed when text changes; don't embed things better reached by trave
 > **Rule of thumb:** embeddings find where to start, the graph reasons from there, the LLM
 > explains the result.
 
+## Concepts and design choices
+
+*Where this fits:* The concepts behind steps 5–8, before any memory code. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [knowledge graph](../docs/glossary.md#knowledge-graph) | sense 1: entities and facts, usually typed | the database engine itself |
+| [embedding](../docs/glossary.md#embedding) | senses 1 and 2: text embeddings (meaning) vs graph embeddings (position) | each other: they answer different questions |
+| agent memory | facts extracted from conversations into nodes and edges | the context window (only what's loaded now) |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| "Embeddings find where to start; the graph reasons from there" | each does what the other can't (the table above) | two retrieval mechanisms to build and tune | vectors only (simple, no multi-hop); graph only (needs exact names) | [D11](../docs/design-decisions.md#d11) |
+| Fixed graph tools before free text-to-Cypher | predictable, testable, safe | less flexible questions | text-to-Cypher with a read-only user and a timeout (Lesson 7) | [D19](../docs/design-decisions.md#d19) |
+
 ## Test it — [`tests/test_06_embeddings_vs_graph.py`](../tests/test_06_embeddings_vs_graph.py)
 
 A test can turn a claim from a concept lesson into evidence. Each test asks one question both

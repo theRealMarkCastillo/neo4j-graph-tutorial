@@ -129,6 +129,28 @@ knows today's date and the prompt forbids relative dates.
 > **Before that rule was added**, the first run stored "…presentation to leadership next
 > Thursday" — true for one week, then wrong. Prompt rules are part of the data model.
 
+## Concepts and design choices
+
+*Where this fits:* Steps 2, 3 and 6: extraction, entity resolution, dedupe and supersession. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| information extraction | turning the latest exchange into `Extraction` records | summarization |
+| [schema](../docs/glossary.md#schema) | sense 2: the Pydantic schema the LLM must fill | the Neo4j schema |
+| [entity](../docs/glossary.md#entity) | sense 2 → sense 1: a mention resolved to an `Entity` node | a database row |
+| entity resolution | deciding a mention is a known entity | deduplication of *memories* |
+| [dedupe by meaning](../docs/glossary.md#semantic) | sense 5: reworded copies count as the same memory | exact-text dedupe |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| A separate extractor LLM call after the reply | chat stays focused; facts said in passing are caught | one extra call per turn | a `save_memory` tool for the chat model (hot path) | [D6](../docs/design-decisions.md#d6) |
+| Entity resolution as a cascade: id ref → name/alias → embedding + name check | cheap and certain checks first, fuzzy ones last | thresholds per embedding model; English role names | LLM judges every match; string matching only | [D7](../docs/design-decisions.md#d7) |
+| Supersede and reinforce instead of overwrite or append | history survives, copies don't pile up | graph grows; reads filter current | overwrite; Mem0-style ADD/UPDATE/DELETE decided by the LLM | [D8](../docs/design-decisions.md#d8) |
+
 ## Test it — [`tests/test_09_write_path.py`](../tests/test_09_write_path.py)
 
 The LLM and the store meet at one typed object, `Extraction`. Hand-write the extraction a

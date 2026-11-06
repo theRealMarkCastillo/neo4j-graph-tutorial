@@ -7,13 +7,34 @@ AI companion — with every query's recorded output.
 ## Quick start
 
 ```bash
-cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–18
+cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–19
 docker compose up -d --build      # Neo4j 5 + APOC + Graph Data Science
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 - Neo4j Browser: http://localhost:7474 (user `neo4j`, password from `.env`)
 - Fresh database? Load the starting graph — see [Lesson 0](lessons/00-setup.md).
+
+## For architects of agent memory
+
+Lessons 8–19 build a companion that remembers a person's life, on Neo4j. Three documents
+explain the design rather than the code:
+
+- **[Design decisions and tradeoffs](docs/design-decisions.md)**: 20 decisions (why Neo4j, why
+  memories are sentence nodes, why recall runs every turn, why forgetting deletes...). Each
+  covers what it costs, the alternatives (Postgres + pgvector, a vector DB, RDF/OWL, Mem0,
+  Zep/Graphiti, Letta, LangMem, GraphRAG), when to revisit it, and the gaps this design doesn't
+  cover.
+- **[The pipeline as concepts](docs/design-decisions.md#the-pipeline-as-concepts)**: each step
+  of a chat turn mapped to its concept and the field it comes from (psychology, NLP,
+  databases, information retrieval, knowledge representation).
+- **[Glossary](docs/glossary.md)**: terms that mean different things in different fields.
+  *[Semantic](docs/glossary.md#semantic)*, *[ontology](docs/glossary.md#ontology)*,
+  *[recall](docs/glossary.md#recall)*, *[profile](docs/glossary.md#profile)* and others have
+  one section each, sense by sense.
+
+Every lesson has a **Concepts and design choices** section that does the same at lesson
+level: which sense each term has there, and the choices made, with costs and alternatives.
 
 ## Lessons
 
@@ -38,11 +59,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | 16 | [Personas](lessons/16-personas.md) | Several companions sharing one memory: private vs. shared memories, hiding derived data, per-persona diaries |
 | 17 | [A web UI](lessons/17-web-ui.md) | FastAPI + one HTML page: chat, life graph, decay curves, related entities; API tests with a fake LLM |
 | 18 | [Watching memory work](lessons/18-seeing-memory-work.md) | Per-turn trace: what recall found by retriever, the exact prompt, why each write happened, timings, persona lens, look-ahead clock, diary |
+| 19 | [Choosing an embedding model](lessons/19-choosing-an-embedding-model.md) | Compare models on your own data, query instructions, re-measure every threshold per model, vectors versioned by model, re-embed |
 
 **Architecture:** component, LangGraph, sequence, data-model and lifecycle diagrams for the
 agent and the companion are in [docs/architecture.md](docs/architecture.md).
 
-## LLM settings (lessons 5 and 7–18)
+## LLM settings (lessons 5 and 7–19)
 
 Any OpenAI-compatible endpoint with tool calling works (OpenAI, DeepInfra, OpenRouter,
 Ollama, LM Studio, vLLM...). Set in `.env`:
@@ -56,9 +78,19 @@ Ollama, LM Studio, vLLM...). Set in `.env`:
 | `LLM_TEMPERATURE` | chat temperature |
 | `COMPANION_USER`, `COMPANION_NAME` | default user and companion names |
 
-Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed. So does the
-reranker that labels unrelated recall matches (`RERANK_MODEL`, default
-`Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18). Both are downloaded once and loaded once per process.
+Embeddings run locally by default (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
+Lesson 19 switches the companion to a remote model with three more keys:
+
+| Key | |
+|---|---|
+| `EMBED_BASE_URL` | an OpenAI-compatible `/embeddings` endpoint; empty = local bge-small |
+| `EMBED_MODEL` | e.g. `Qwen/Qwen3-Embedding-8B`; needs a measured profile in `companion/embeddings.py` |
+| `EMBED_API_KEY` | optional, defaults to `LLM_API_KEY` |
+
+After switching, run `.venv/bin/python -m companion.reembed`. The tests always use the local
+model. The reranker that labels unrelated recall matches also runs locally (`RERANK_MODEL`,
+default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding profile sets
+`weak_below`, Lesson 19). Local models are downloaded once and loaded once per process.
 
 ## Files
 
@@ -79,9 +111,11 @@ reranker that labels unrelated recall matches (`RERANK_MODEL`, default
 | `companion/worker.py` | Lesson 14 — background extraction worker |
 | `companion/insights.py` | Lesson 15 — graph embeddings (FastRP + kNN) and node similarity |
 | `companion/web.py`, `companion/static/` | Lessons 17–18 — web UI (FastAPI + one HTML page) and the per-turn memory trace |
-| `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–17 |
+| `companion/embeddings.py`, `calibrate.py`, `reembed.py` | Lesson 19 — local or remote embeddings, per-model thresholds, measuring them, backfilling vectors |
+| `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–17 (the *how*; design-decisions.md is the *why*) |
 | `tests/`, `pytest.ini` | Per-lesson tests and LLM evals (see *Tests and evals*) |
-| `docs/glossary.md` | Glossary of overlapping memory / graph / ontology terms |
+| `docs/glossary.md` | Glossary of overlapping memory / graph / ontology terms, with a section per overloaded word |
+| `docs/design-decisions.md` | Design decisions and tradeoffs, alternatives, gaps, comparison with other memory systems |
 | `lessons/outputs/` | Recorded runs for lessons 7, 10, 11, 12, 13 and 17 |
 
 ## Tests and evals
@@ -113,5 +147,7 @@ docker compose down -v            # stop and DELETE all data
 .venv/bin/python -m companion.web # Lessons 17-18 web UI on http://127.0.0.1:8000 (click a reply to see its trace)
 .venv/bin/python -m companion.demo   # scripted two-session companion demo
 .venv/bin/python -m companion.scenarios   # Lesson 11–16 scenario tests (real LLM calls)
+.venv/bin/python -m companion.calibrate   # Lesson 19: measure thresholds for the embedding model in .env
+.venv/bin/python -m companion.reembed     # Lesson 19: backfill vectors after switching models
 .venv/bin/python graphrag.py "Who should own our new Rust performance work?"
 ```

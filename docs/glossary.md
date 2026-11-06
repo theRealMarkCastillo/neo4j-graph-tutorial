@@ -1,8 +1,11 @@
 # Glossary — overlapping terms in graph, memory and agent work
 
-Many of these terms come from different fields (psychology, databases, the semantic web,
+Many of these terms come from different fields (psychology, databases, the Semantic Web,
 NLP, information retrieval, LLM tooling) and get used loosely. Each entry says what it means,
-where it shows up in this repo, and what it is often confused with.
+where it shows up in this repo, and what it is often confused with. Words with several
+meanings (*semantic*, *ontology*, *recall*, *profile*...) have their own section at the end,
+one sense per row. The reasons behind each design choice, and the alternatives, are in
+[design-decisions.md](design-decisions.md).
 
 **Jump to:** [Kinds of memory](#kinds-of-memory) · [Where memory lives](#where-memory-lives) ·
 [Graph modeling](#graph-modeling) · [Ontology terms](#ontology-terms) ·
@@ -25,7 +28,7 @@ frameworks such as the CoALA paper and LangMem.
 | **Short-term memory** | Recent conversation, kept for a session | The checkpointer's messages per `thread_id` (last 16 sent to the LLM) | working memory (often used interchangeably) |
 | **Long-term memory** | Persists across sessions | Everything in Neo4j | — |
 | **Episodic memory** | Experiences: what happened, when, in what context | `Episode`/`Turn` nodes, `event` memories, diary summaries | events in a *timeline* (episodic memory also keeps the context and source) |
-| **Semantic memory** | General facts, true independent of when they were learned | `fact`/`preference` memories, the life graph | "semantic search" (see [several meanings](#words-with-several-meanings)) |
+| **Semantic memory** | General facts, true independent of when they were learned | `fact`/`preference` memories, the life graph | "semantic search" (see [semantic](#semantic)) |
 | **Procedural memory** | How to do things / how to behave | Persona prompt, `boundary` memories, extraction rules | preferences (what they like vs how to act) |
 | **Autobiographical / biographical memory** | Episodic + semantic memory about one person's life | The whole companion design ([Lesson 8](../lessons/08-memory-design-for-companions.md)) | a user profile (a flat list; biography has history and relationships) |
 | **Prospective memory** | Remembering to do something in the future | `plan` memories with `due_on`, follow-ups, yearly dates | reminders/alarms (prospective memory also chooses *when* it's relevant) |
@@ -90,14 +93,17 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **Relation extraction** | Finding typed links between entities | `relations` in the extraction | — |
 | **Coreference resolution** | Working out what pronouns refer to ("she" → Priya) | Earlier turns given as context ([Lesson 11](../lessons/11-harder-scenarios-and-evals.md)) | entity resolution |
 | **Entity resolution / linking / record linkage** | Deciding two mentions are the same real-world thing | `resolve_entity()`: ref, name/alias, embedding + name similarity | deduplication of *memories* |
-| **Deduplication** | Not storing the same fact twice | 0.975 similarity + same dates → reinforce | supersession (a *change*, not a copy) |
+| **Deduplication** | Not storing the same fact twice | index score ≥ the model's `duplicate` threshold (0.975 for bge-small) + same dates → reinforce | supersession (a *change*, not a copy) |
 | **Structured output / function calling** | Making the LLM return data matching a schema | `with_structured_output(Extraction, method="function_calling")` | JSON mode (no schema guarantee) |
 
 ## Retrieval
 
 | Term | Meaning | In this repo | Often confused with |
 |---|---|---|---|
-| **Embedding** | A vector representing meaning | `bge-small`, 384 dims | a graph embedding (structure, e.g. `gds.fastRP`) |
+| **Embedding** | A vector representing meaning | `bge-small` (384 dims, local) or Qwen3-Embedding-8B (4096, remote) | a graph embedding (structure, e.g. `gds.fastRP`) |
+| **Embedding profile** | An embedding model together with the thresholds measured for it | `companion/embeddings.py`: bge-small (local, 384 dims) or Qwen3-Embedding-8B (remote, 4096); each writes its own property and indexes (Lesson 19) | a model name alone (its scores mean nothing without its thresholds) |
+| **Query instruction** | Text some models expect before a *query* but not before stored text | Qwen: "Instruct: Given a message from a user, retrieve memories... Query: " (Lesson 19) | a prompt to an LLM |
+| **Calibration** | Picking a threshold from labelled yes/no pairs | `python -m companion.calibrate` (Lesson 19) | probability calibration in classifiers |
 | **Cosine similarity** | Angle-based vector similarity | Neo4j's vector score is cosine *rescaled* to 0–1: (1 + cos) / 2 | distance |
 | **ANN / HNSW** | Approximate nearest-neighbour search / the graph-based index Neo4j's vector index uses | `db.index.vector.queryNodes` | exact k-NN |
 | **Lexical / keyword search, BM25** | Matching words, scored by term frequency | Not used (Neo4j full-text indexes provide it) | semantic search |
@@ -129,7 +135,7 @@ See [Lesson 12](../lessons/12-ontology.md).
 |---|---|---|---|
 | **Consolidation** | Re-processing memories offline: merge, fix, summarize | End-of-episode pass; `consolidate()` rolls repeats into patterns, lapses old plans, prunes trivia ([Lesson 13](../lessons/13-memory-over-time.md)) | summarization alone |
 | **Pattern / roll-up** | One lasting memory standing for many similar ones: episodic → semantic | "works out at the gym regularly", `(pattern)-[:SUMMARIZES]->(member)`, `evidence` count | a summary of one conversation |
-| **Complete linkage** | Clustering where every member of a group must be similar to *every* other member (this repo finds the largest such group first) | `_clusters()` in store.py, threshold 0.82 | single linkage (similar to *any* member; chains) |
+| **Complete linkage** | Clustering where every member of a group must be similar to *every* other member (this repo finds the largest such group first) | `_clusters()` in store.py, threshold per embedding model (0.82 for bge-small) | single linkage (similar to *any* member; chains) |
 | **Pruning** | Deleting memories on purpose (data minimization) | dormant statuses/feelings with importance ≤ 3, after consolidation | decay (keeps them) |
 | **Reflection** | Generating higher-level insights from many memories (Generative Agents) | Not yet (a "where to go next" idea) | consolidation |
 | **Conflict / contradiction resolution** | Deciding which of two incompatible facts is current | `supersedes`, `invalidate`, cardinality rules | dedup |
@@ -215,17 +221,176 @@ See [Lesson 12](../lessons/12-ontology.md).
 
 ## Words with several meanings
 
-| Word | Meanings |
-|---|---|
-| **semantic** | (1) semantic *memory* = general facts (psychology); (2) semantic *search* = embedding similarity; (3) the *Semantic Web* = RDF/OWL standards; (4) "semantic layer" = business definitions over data |
-| **graph** | (1) the Neo4j data graph; (2) a LangGraph state graph (control flow); (3) a chart |
-| **recall** | (1) our `recall()` = fetch memories for a turn; (2) the retrieval *metric*; (3) MemGPT's *recall memory* = conversation history; (4) human remembering |
-| **memory** | (1) any stored knowledge; (2) one `Memory` node; (3) RAM; (4) the checkpointer's thread state |
-| **episode** | (1) one conversation (`Episode` node); (2) episodic memory in general; (3) an RL episode |
-| **entity** | (1) an `Entity` node; (2) a named entity in NER; (3) a database row/object |
-| **schema** | (1) Neo4j constraints/indexes; (2) a Pydantic/JSON schema for structured output; (3) loosely, an ontology |
-| **embedding** | (1) text embedding (meaning); (2) graph embedding (position in a graph); (3) "embedding" a widget |
-| **context** | (1) the context window; (2) earlier turns given to the extractor as "context only"; (3) Neo4j/driver sessions |
-| **hybrid** | (1) vector + keyword search; (2) vector + graph retrieval; (3) LLM + rules (our boundary tripwire) |
-| **forget** | (1) hard delete (`/forget`); (2) retire / supersede; (3) decay in ranking |
-| **ontology** | (1) the formal OWL kind; (2) a lightweight type hierarchy + rules (ours); (3) loosely, any schema |
+The same word names different things in psychology, databases, information retrieval and LLM
+tooling. Each entry lists the senses, says **which ones this repo uses and where**, and gives a
+quick test for telling them apart. The lessons link here when they use one of these words, and
+[design-decisions.md](design-decisions.md) says which sense it means each time.
+
+Quick index: [semantic](#semantic) · [ontology](#ontology) · [knowledge graph](#knowledge-graph) ·
+[graph](#graph) · [memory](#memory) · [recall](#recall) · [profile](#profile) ·
+[episode](#episode) · [entity](#entity) · [schema](#schema) · [embedding](#embedding) ·
+[similarity and score](#similarity-and-score) · [index](#index) · [hybrid](#hybrid) ·
+[rerank and relevance](#rerank-and-relevance) · [inference](#inference) ·
+[context](#context) · [agent](#agent) · [forget](#forget) · [instruction](#instruction)
+
+### semantic
+
+| # | Sense | Field | In this repo |
+|---|---|---|---|
+| 1 | **semantic memory**: general facts, true independent of when they were learned (vs *episodic*: experiences) | cognitive psychology; CoALA, LangMem | `fact`/`preference` memories, the life graph, consolidated habits (Lessons 8, 13) |
+| 2 | **semantic search / semantic similarity**: comparing meaning through embeddings, not words | information retrieval | vector search over `memory_vec`; the retriever called *semantic* in `recall()` (Lessons 5, 10) |
+| 3 | **Semantic Web**: RDF, OWL, SPARQL and linked data standards | W3C | not used; our ontology is a lightweight cousin (Lesson 12) |
+| 4 | **semantic layer / semantic model**: business definitions of metrics and entities over a data warehouse | BI and analytics | not used. The closest thing here is the ontology: an agreed meaning for relation types |
+| 5 | **semantic** as in "what it means" in general: semantic deduplication, semantic chunking, semantic cache | everyday ML usage | dedupe by meaning, not exact text (Lesson 9) |
+
+**Watch out:** `recall()` returns a list called `semantic`. That's sense 2 (it came from vector
+search), and it can contain episodic memories (events, feelings). Semantic *memory* (sense 1)
+is a kind of knowledge. Semantic *search* (sense 2) is a way of finding things. They're
+independent: you can vector-search episodes, and look up facts by exact name.
+
+**Test:** if you can replace the word with "vector-based", it's sense 2. If you can replace it
+with "general-fact", it's sense 1.
+
+### ontology
+
+| # | Sense | In this repo |
+|---|---|---|
+| 1 | **formal ontology**: classes, properties and logical axioms in OWL/RDFS, used by a reasoner | not used |
+| 2 | **lightweight ontology**: a controlled vocabulary of types with a hierarchy and a few rules (symmetry, inverse, cardinality, range) and some inference | `companion/ontology.py` → `(:RelType)` nodes (Lesson 12) |
+| 3 | loosely, **any schema or data model** ("our ontology has Person and Company") | avoided; we say *schema* for structure (Lesson 8) |
+| 4 | **philosophy**: the study of what exists | — |
+
+**Watch out:** schema = *shape* (labels, properties, constraints). Ontology = *meaning* (what
+`sister` is, that it implies `sibling`, that `lives_in` holds one place at a time). An
+ontology also differs from a *taxonomy* (only the is-a tree) and from a *knowledge graph*
+(the facts the ontology describes). In TBox/ABox terms: the ontology is the TBox, the life
+graph the ABox.
+
+### knowledge graph
+
+| # | Sense | In this repo |
+|---|---|---|
+| 1 | a graph of **entities and facts**, usually typed by an ontology | the life graph + memories + RelType nodes |
+| 2 | Google's **Knowledge Graph** product (the info panels in search) | — |
+| 3 | marketing for **any graph database** | avoided: the database is Neo4j, the KG is the content |
+| 4 | a **temporal knowledge graph**: facts with validity times | ours is one (`since`/`until`, `invalidated_at`); so is Graphiti |
+
+### graph
+
+(1) the **Neo4j data graph**: nodes and relationships; (2) a **LangGraph state graph**: the
+control flow of the companion (recall → respond → remember), whose "nodes" are Python
+functions; (3) a **chart**; (4) in GDS, a **projected graph**: an in-memory copy for
+algorithms (Lessons 4, 15). Sentences like "the graph calls recall" mean sense 2. "Recall
+walks the graph" means sense 1.
+
+### memory
+
+(1) **Any stored knowledge** the companion has; (2) one **`Memory` node** (a sentence with a
+kind and dates); (3) the **kinds of memory** from psychology (episodic, semantic, procedural,
+prospective); (4) the checkpointer's **short-term thread state**; (5) **RAM**: Neo4j's page
+cache and heap, GDS's in-memory projections. "Memory decays" is sense 2 (a node's strength).
+"GDS needs memory" is sense 5.
+
+### recall
+
+(1) our **`recall()`**: fetch what's relevant for one turn; (2) the **retrieval metric**: the
+share of relevant items found (recall@k), not measured here (we use hit@k); (3) MemGPT/Letta's
+**recall memory**: the searchable conversation history; (4) **human remembering**. Lesson 18's
+*Try recall* tab is sense 1.
+
+### profile
+
+(1) the **core profile**: boundaries plus the most important facts, always in the prompt
+(Lesson 10); (2) an **embedding profile**: a model plus its measured thresholds (Lesson 19);
+(3) LangMem's **profile memory**: one document per user updated in place, as opposed to a
+*collection* of small memories; (4) a **user profile** in product terms; (5) Cypher's
+**`PROFILE`**: an executed query plan (Lesson 3).
+
+### episode
+
+(1) one **conversation**: an `Episode` node with turns, summary and mood; (2) **episodic
+memory** in general: experiences with time and context; (3) an episode in **reinforcement
+learning**; (4) Graphiti's *episode*: one ingested chunk of input data. Sense 1 is the
+provenance unit for sense 2.
+
+### entity
+
+(1) an **`Entity` node**: a person, pet, place, organization, activity or thing in the user's
+life; (2) a **named entity** in NER: a span of text such as "Maya"; (3) a **database
+row/object** (an ORM entity). The extractor turns sense 2 into sense 1 through *entity
+resolution*.
+
+### schema
+
+(1) **Neo4j constraints and indexes** (`companion/schema.py`); (2) a **Pydantic/JSON schema**
+that structured output must match (`Extraction`); (3) loosely, an **ontology** (see above).
+
+### embedding
+
+(1) a **text embedding**: a vector from words, about meaning (Lessons 5, 19); (2) a **graph
+embedding**: a vector from a node's position in the graph (FastRP, Lesson 15); (3) embedding a
+widget in a page. Senses 1 and 2 can disagree on purpose: text says what things are *about*,
+structure says what they're *connected to*.
+
+### similarity and score
+
+(1) **cosine similarity**: −1 to 1, computed in Python; (2) Neo4j's **vector index score**:
+cosine rescaled to 0–1 as (1 + cos) / 2, so 0.5 means unrelated; (3) GDS **kNN similarity**:
+also 0–1; (4) **Jaccard** node similarity: shared neighbours / all neighbours; (5) a
+**cross-encoder relevance** logit: unbounded, about −11 to +5 (Lesson 18). Thresholds only
+make sense on one scale *and* one model: see Lesson 19's calibration table, which labels each
+"score" or "cosine".
+
+### index
+
+(1) a **database index** for lookups (`memory_user_kind`); (2) a **vector index** (HNSW) for
+nearest-neighbour search (`memory_vec`); (3) a **full-text index** (Lucene, BM25), available
+but not used; (4) "indexing" in RAG: the offline step that chunks and embeds documents.
+
+### hybrid
+
+(1) **vector + keyword** search (the common meaning in RAG products); (2) **vector + graph**
+retrieval: what this repo means by hybrid recall; (3) **LLM + rules**, such as the boundary
+tripwire or the ontology checks on extracted relations.
+
+### rerank and relevance
+
+(1) our **ranking formula**: similarity × importance × decay (`decay.rank`, Lessons 10, 13);
+(2) a **reranker model** (cross-encoder) that reads query and text together (Lesson 18);
+(3) **relevance** as a human judgement: is this memory about this message? Lesson 18 measures
+(3) with (2). Lesson 19 measures it with Qwen's vector score.
+
+### inference
+
+(1) **logical inference / entailment**: deriving facts from rules (a brother's daughter is a
+niece; `sister` implies `sibling`) (Lesson 12); (2) **model inference**: running an LLM or
+embedding model ("inference endpoint", "inference cost"); (3) the LLM **inferring** an
+unstated link ("my meds don't help" → the ADHD memory), which is statistical, not rule-based.
+"Inference provider" is sense 2. "Inferred relatives" is sense 1.
+
+### context
+
+(1) the **context window**: what the model sees in one call; (2) **context engineering**:
+choosing what goes in it (`recall()` + `format_context()`); (3) earlier turns given to the
+extractor **as context only**, not as a source of new facts (Lesson 11); (4) a driver
+**session** or transaction context.
+
+### agent
+
+(1) an **LLM that chooses actions** (tools) in a loop: `team_agent.py` (Lesson 7); (2) the
+**`agent` property** on memories: which *persona* heard it (Lesson 16); (3) loosely, any LLM
+application. The companion is a workflow (fixed steps), not an agent in sense 1: see
+[D19](design-decisions.md#d19).
+
+### forget
+
+(1) **hard delete** with redaction (`/forget`, Lesson 11); (2) **retire / supersede**: no longer
+current, still stored (Lesson 9); (3) **decay**: still stored and current, just ranked lower
+or dormant (Lesson 13); (4) **pruning**: deleting low-value memories on purpose (Lesson 13).
+Only (1) and (4) remove data.
+
+### instruction
+
+(1) a **system prompt** or persona instruction to the chat model; (2) an embedding model's
+**query instruction**: text put before a query so the model embeds it for retrieval
+(Lesson 19); (3) instruction-tuned models in general. Sense 2 is never seen by the chat model.

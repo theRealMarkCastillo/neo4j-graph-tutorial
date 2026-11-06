@@ -2,7 +2,7 @@
 from fastembed import TextEmbedding
 from neo4j import GraphDatabase
 
-from config import EMBED_MODEL as MODEL, NEO4J_AUTH as AUTH, NEO4J_URI as URI
+from config import LOCAL_EMBED_MODEL as MODEL, NEO4J_AUTH as AUTH, NEO4J_URI as URI
 
 DESCRIPTIONS = {
     ("Project", "Search Revamp"): "Rebuilding product search with semantic ranking, query understanding and machine-learning relevance models.",

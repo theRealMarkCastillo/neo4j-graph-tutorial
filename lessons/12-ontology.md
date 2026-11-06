@@ -8,7 +8,9 @@ Up to Lesson 11, relation types were whatever words the LLM chose: `girlfriend`,
 - **No rules.** Nothing knew that a person lives in one place at a time.
 
 An **ontology** fixes this by describing what the relation types *mean*. (Terms are defined
-in the [glossary](../docs/glossary.md).)
+in the [glossary](../docs/glossary.md). *Ontology* has several meanings; this lesson uses
+[sense 2](../docs/glossary.md#ontology): a lightweight vocabulary with a hierarchy and rules, not
+OWL. Why not OWL or free-form labels: [D9](../docs/design-decisions.md#d9).)
 
 ## Semantic memory, graph memory, ontology
 
@@ -19,7 +21,9 @@ in the [glossary](../docs/glossary.md).)
 | **Ontology** | *What do the types mean?* Vocabulary, hierarchy, rules | `companion/ontology.py` → `(:RelType)` nodes |
 
 So the companion is semantic + episodic memory, stored as a graph, searched with vectors,
-and (now) typed by an ontology.
+and (now) typed by an ontology. Two senses of *semantic* meet in that sentence: semantic *memory*
+is the kind of knowledge (sense 1), and "searched with vectors" is what products call semantic
+*search* (sense 2). See [semantic](../docs/glossary.md#semantic).
 
 ## The two layers
 
@@ -240,6 +244,29 @@ Two things show up in the transcript. With the vocabulary in its prompt, the ext
 covers that path. And the extractor again stored `user -niece-> Ana` itself, as in finding 3.
 The Lesson 11 scenarios still pass with `RELATION_GROUPS` removed ("family" questions now go
 through the hierarchy) and with the `_sync_superseded_relations` backstop deleted (below).
+
+## Concepts and design choices
+
+*Where this fits:* Step 4 (canonicalize relation types) and step 10 (infer new ones). The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [ontology](../docs/glossary.md#ontology) | sense 2: a lightweight vocabulary + hierarchy + rules, in Python and `(:RelType)` nodes | OWL (sense 1); a schema (sense 3) |
+| TBox / ABox | the types and rules / the facts about individuals | schema vs data |
+| [inference](../docs/glossary.md#inference) | sense 1: rules derive facts (brother's daughter → niece) | model inference (running an LLM); the LLM's own guessing |
+| [semantic memory](../docs/glossary.md#semantic) | sense 1: the life graph is semantic memory, typed by the ontology | the Semantic Web (sense 3) |
+| canonicalization | mapping relation *words* to one type | entity resolution (for *things*) |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| A lightweight ontology in code, mirrored into the graph | agreement on types without OWL tooling | someone maintains the vocabulary | free-form labels; OWL + reasoner; SHACL validation | [D9](../docs/design-decisions.md#d9) |
+| Explicit synonyms, not embedding similarity, for relation words | embeddings mapped relation words badly (experiment 1) | every synonym is hand-listed | nearest-type by embedding (kept only as a review hint) | [D9](../docs/design-decisions.md#d9) |
+| Unknown types kept and proposed, not rejected | new kinds of relationship do appear | a review step | reject unknown types; accept everything | [D9](../docs/design-decisions.md#d9) |
+| LPG with our own ids, not RDF | properties on relationships, no URIs needed | no standard semantics to exchange | RDF/OWL via neosemantics | [D3](../docs/design-decisions.md#d3) |
 
 ## Test it — [`tests/test_12_ontology.py`](../tests/test_12_ontology.py)
 

@@ -1,5 +1,9 @@
 # Architecture — the team agent and the companion
 
+This page shows *how* the pieces fit. *Why* each is built this way, with alternatives and
+tradeoffs, is in [design-decisions.md](design-decisions.md); overloaded terms are in the
+[glossary](glossary.md#words-with-several-meanings).
+
 Diagrams for the code in Lessons 7–17. They are [Mermaid](https://mermaid.js.org/), which
 GitHub renders inline.
 
@@ -72,7 +76,7 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph shared["Shared"]
-        config["config.py<br/>chat_model() · NEO4J_* · EMBED_MODEL"]
+        config["config.py<br/>chat_model() · NEO4J_* · EMBED_*"]
     end
 
     subgraph agent["Lesson 7 — team_agent.py"]

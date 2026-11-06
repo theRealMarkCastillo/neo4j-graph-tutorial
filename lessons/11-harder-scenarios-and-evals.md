@@ -229,7 +229,7 @@ Sage:  Your brother Leo is a paramedic and your aunt Rosa is a pharmacist, so yo
 ### Sensitive memories
 
 The extractor flags health, diagnoses, medication, sexuality, religion, finances, legal trouble
-and trauma as `sensitive`. They are never in the core profile, and the semantic search includes
+and trauma as `sensitive`. They are never in the core profile, and the vector ([semantic](../docs/glossary.md#semantic), sense 2) search includes
 them only when they are **(near) the best match** for the message.
 
 Why relative, not a fixed score? With `bge-small` every score falls in a narrow band:
@@ -273,6 +273,29 @@ Scenario(
   sensitive              4/4
   total                  35/35
 ```
+
+## Concepts and design choices
+
+*Where this fits:* Steps 2, 6 and 14 under pressure: when to extract, how to forget, how to test. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| [context](../docs/glossary.md#context) | sense 3: earlier turns given to the extractor *as context only* | the context window |
+| hot path vs background | writing memory during the reply vs after it | sync vs async |
+| [forget](../docs/glossary.md#forget) | sense 1: `/forget` deletes and redacts | retiring (sense 2) or decay (sense 3) |
+| [semantic search](../docs/glossary.md#semantic) | sense 2: vector search, which only includes sensitive memories near the top | semantic memory |
+| eval / scenario test | multi-turn conversations graded by code | unit tests; LLM-as-judge |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| Latest exchange as source + earlier turns as context + an end-of-episode pass | pronouns resolve, facts aren't re-extracted every turn | two extraction passes to keep consistent | re-extract the whole window each turn; extract only at the end | [D6](../docs/design-decisions.md#d6) |
+| Hard delete with redaction for "forget" | erasure means erasure | provenance is lost on purpose | soft delete; a boundary (hide, keep) | [D18](../docs/design-decisions.md#d18) |
+| Sensitive memories only when (near) the best match | health or money shouldn't come up in small talk | an inferential mention can miss | never recall them; ask first | [D17](../docs/design-decisions.md#d17) |
+| Code-graded scenarios, not an LLM judge | cheap, explainable, the grading itself never varies | only covers what was scripted | LLM-as-judge; LoCoMo / LongMemEval-style benchmarks | [D20](../docs/design-decisions.md#d20) |
 
 ## Test it — prompts, evals and scenarios
 

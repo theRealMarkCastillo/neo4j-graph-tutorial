@@ -179,6 +179,26 @@ BG Smoke: /memories
 Both replies came back without waiting. The memory lines arrived afterwards, and the second
 job already knew about Miso from the first.
 
+## Concepts and design choices
+
+*Where this fits:* Step 6 made safe: atomic writes, no races, extraction off the reply's critical path. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).
+
+**Terms with a specific meaning here** (every sense is in the [glossary](../docs/glossary.md#words-with-several-meanings)):
+
+| Term | Means here | Not to be confused with |
+|---|---|---|
+| transaction | one `apply()` commits or rolls back as a unit | a session (a connection) |
+| write lock | Neo4j's lock on the user node, held until commit | a Python lock (one process only) |
+| background worker | a second thread running extraction jobs in order | async/await |
+
+**Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
+
+| We chose | Because | It costs | Instead, you could | |
+|---|---|---|---|---|
+| One transaction per extraction | no half-applied contradictions | slow work (LLM, embeddings) must happen outside it | a transaction per statement | [D16](../docs/design-decisions.md#d16) |
+| Serialize writers per user with a lock on the user node | removes the check-then-act duplicate race | writes for one user wait for each other | a queue per user; optimistic retries; content-hash constraints | [D16](../docs/design-decisions.md#d16) |
+| Background extraction thread | the reply doesn't wait for extraction | a memory may land after the next turn starts | extract inline; a job queue service (Celery, SQS) | [D6](../docs/design-decisions.md#d6) |
+
 ## Test it — [`tests/test_14_production.py`](../tests/test_14_production.py)
 
 ```bash
