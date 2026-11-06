@@ -91,7 +91,7 @@ Design choices, and where they come from in earlier lessons:
 ## Create the schema
 
 ```bash
-.venv/bin/python -c "from neo4j import GraphDatabase; import config; from companion.schema import ensure_schema; \
+uv run python -c "from neo4j import GraphDatabase; import config; from companion.schema import ensure_schema; \
 d = GraphDatabase.driver(config.NEO4J_URI, auth=config.NEO4J_AUTH); ensure_schema(d); print('ok')"
 ```
 

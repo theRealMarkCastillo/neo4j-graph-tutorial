@@ -1,6 +1,6 @@
 """Lesson 18 — seeing memory work: the per-turn trace and the inspection endpoints.
 
-    .venv/bin/python -m pytest tests/test_18_inspect.py -v
+    uv run python -m pytest tests/test_18_inspect.py -v
 
 Same setup as Lesson 17: TestClient and a fake LLM, so these check what the page is shown,
 not what a model would say. Each test pins one thing a learner reads off the page: if the

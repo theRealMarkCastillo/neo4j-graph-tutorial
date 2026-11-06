@@ -1,0 +1,29 @@
+[project]
+name = "neo4j-graph-tutorial"
+version = "0.1.0"
+description = "Neo4j from Cypher basics to graph-based long-term memory for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+# Lower bounds are what the course needs; uv.lock records the exact versions it was tested
+# with. Upgrade on purpose: `uv lock --upgrade`, run the tests, commit the new lock.
+dependencies = [
+    "neo4j>=5.28",
+    "fastembed>=0.4",
+    "openai>=1.40",
+    "python-dotenv>=1.0",
+    "langgraph>=1.0",
+    "langchain-openai>=1.0",
+    "langchain-core>=1.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[dependency-groups]
+# installed by `uv sync` by default
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",  # FastAPI's TestClient (Lesson 17)
+]
+
+[tool.uv]
+package = false  # a tutorial of scripts, not an installable package

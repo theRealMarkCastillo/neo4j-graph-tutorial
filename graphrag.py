@@ -1,6 +1,6 @@
 """Lesson 5.5 — GraphRAG: vector search finds entry points, the graph supplies connected context.
 
-Usage:  .venv/bin/python graphrag.py "who could help with a recommendation engine?"
+Usage:  uv run python graphrag.py "who could help with a recommendation engine?"
 If LLM_MODEL (and LLM_BASE_URL / LLM_API_KEY) are set in .env, the LLM writes the answer;
 otherwise the script prints the retrieved context and stops.
 """

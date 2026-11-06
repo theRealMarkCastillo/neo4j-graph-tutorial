@@ -135,7 +135,7 @@ facts: the companion doesn't store "Cy is Ana's friend" because embeddings put t
 ## Test it
 
 ```bash
-.venv/bin/python -m pytest tests/test_15_graph_embeddings.py -v   # 6 tests, ~2 s, no LLM
+uv run python -m pytest tests/test_15_graph_embeddings.py -v   # 6 tests, ~2 s, no LLM
 ```
 
 - Cy's crowd is found by FastRP; node similarity only sees Boulder Gym.

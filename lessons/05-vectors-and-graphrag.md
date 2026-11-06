@@ -50,7 +50,7 @@ label, and creates one vector index `embedded_vec` over all of them.
 > [Lesson 19](19-choosing-an-embedding-model.md) measures what a larger remote model buys.
 
 ```bash
-.venv/bin/python embed.py
+uv run python embed.py
 ```
 ```
 Embedded 10 nodes (384 dims)
@@ -108,7 +108,7 @@ half of **GraphRAG**.
    context and stops).
 
 ```bash
-.venv/bin/python graphrag.py "Who could help us build a recommendation engine?"
+uv run python graphrag.py "Who could help us build a recommendation engine?"
 ```
 ```
 === Retrieved graph context ===
@@ -138,7 +138,7 @@ half of **GraphRAG**.
 and the graph step added *why* (ML level 5, the project's requirements, Alice as teammate).
 
 ```bash
-.venv/bin/python graphrag.py "Who should own our new Rust performance work?"
+uv run python graphrag.py "Who should own our new Rust performance work?"
 ```
 ```
 [Person] Finn (match 0.87)

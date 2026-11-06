@@ -10,8 +10,8 @@ forget things. This lesson:
    conversations and checks the graph and the replies.
 
 ```bash
-.venv/bin/python -m companion.scenarios                 # all 9 scenarios (~5 min, real LLM calls)
-.venv/bin/python -m companion.scenarios forget sam      # only matching scenarios
+uv run python -m companion.scenarios                 # all 9 scenarios (~5 min, real LLM calls)
+uv run python -m companion.scenarios forget sam      # only matching scenarios
 ```
 
 Full recorded run: [outputs/11-scenarios.txt](outputs/11-scenarios.txt) — **35/35 checks**
@@ -307,8 +307,8 @@ Scenario(
 | [`test_11_scenarios.py`](../tests/test_11_scenarios.py) | the 12 scenarios as pytest cases | ~1 min each |
 
 ```bash
-.venv/bin/python -m pytest -m llm tests/test_11_extraction_evals.py
-EVAL_TRIALS=3 .venv/bin/python -m pytest -m llm tests/test_11_extraction_evals.py   # pass rate
+uv run python -m pytest -m llm tests/test_11_extraction_evals.py
+EVAL_TRIALS=3 uv run python -m pytest -m llm tests/test_11_extraction_evals.py   # pass rate
 ```
 
 Each golden case pins one prompt rule, and most came from a recorded failure or the prompt review:

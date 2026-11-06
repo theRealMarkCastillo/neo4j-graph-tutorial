@@ -10,7 +10,7 @@ This lesson makes both visible. Click any reply in the chat and the right-hand s
 what memory did for that reply.
 
 ```bash
-.venv/bin/python -m companion.web        # http://127.0.0.1:8000, then click a reply
+uv run python -m companion.web        # http://127.0.0.1:8000, then click a reply
 ```
 
 | Tab | Shows | Teaches |
@@ -241,7 +241,7 @@ still listed a month later. It only lapses when the end-of-episode upkeep runs
 ## Test it — [`tests/test_18_inspect.py`](../tests/test_18_inspect.py)
 
 ```bash
-.venv/bin/python -m pytest tests/test_18_inspect.py -v    # 8 tests, ~4 s, no LLM
+uv run python -m pytest tests/test_18_inspect.py -v    # 8 tests, ~4 s, no LLM
 ```
 
 A trace that is wrong teaches the wrong thing, so it gets tests like any other feature:

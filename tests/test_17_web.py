@@ -1,6 +1,6 @@
 """Lesson 17 — the web UI's API, end to end, with a fake LLM.
 
-    .venv/bin/python -m pytest tests/test_17_web.py -v
+    uv run python -m pytest tests/test_17_web.py -v
 
 FastAPI's TestClient calls the app in-process (no server, no port). The chat model, the
 extractor and the diary summarizer are faked, so this tests the wiring (sessions, the

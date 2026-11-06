@@ -210,9 +210,9 @@ repeats. For a few hundred short-lived memories that's still instant.
 ## Test it — [`tests/test_13_time.py`](../tests/test_13_time.py)
 
 ```bash
-.venv/bin/python -m pytest tests/test_13_time.py -v                # 25 tests, ~2 s, no LLM
-EVAL_TRIALS=3 .venv/bin/python -m pytest -m llm tests/test_13_time.py
-.venv/bin/python -m companion.scenarios situational
+uv run python -m pytest tests/test_13_time.py -v                # 25 tests, ~2 s, no LLM
+EVAL_TRIALS=3 uv run python -m pytest -m llm tests/test_13_time.py
+uv run python -m companion.scenarios situational
 ```
 
 - **Unit:**

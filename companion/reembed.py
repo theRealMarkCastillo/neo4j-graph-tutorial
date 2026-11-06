@@ -1,8 +1,8 @@
 """Lesson 19 — give every stored memory, entity and episode a vector from the active model.
 
-    python -m companion.reembed              nodes that don't have one yet (after a switch)
-    python -m companion.reembed --all        recompute every vector (e.g. a changed instruction)
-    python -m companion.reembed --user Mark  one user only
+    uv run python -m companion.reembed              nodes that don't have one yet (after a switch)
+    uv run python -m companion.reembed --all        recompute every vector (e.g. a changed instruction)
+    uv run python -m companion.reembed --user Mark  one user only
 
 Run it after changing EMBED_MODEL / EMBED_BASE_URL. Each model writes its own property
 (embedding / embedding_<model>), so the old vectors stay and switching back costs nothing.

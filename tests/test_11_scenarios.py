@@ -1,7 +1,7 @@
 """Lesson 11 — the multi-session scenarios as pytest cases (real LLM, ~1 minute each).
 
     pytest -m llm tests/test_11_scenarios.py -k forget     # one scenario
-    .venv/bin/python -m companion.scenarios                 # same, with full transcripts
+    uv run python -m companion.scenarios                 # same, with full transcripts
 """
 import pytest
 

@@ -5,6 +5,6 @@
     companion/store.py    MemoryStore: write (resolve, dedupe, supersede) and recall (hybrid)
     companion/extract.py  LLM calls: memory extraction and episode summaries
     companion/graph.py    LangGraph: recall -> respond -> remember
-    companion/__main__.py terminal chat:  .venv/bin/python -m companion
+    companion/__main__.py terminal chat:  uv run python -m companion
     companion/demo.py     scripted two-session demo used to record the lesson outputs
 """

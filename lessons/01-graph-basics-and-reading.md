@@ -222,7 +222,7 @@ rather than exact totals that will change. Brittle tests that break for good rea
 people to ignore failures.
 
 ```bash
-.venv/bin/python -m pytest tests/test_01_reading.py -v
+uv run python -m pytest tests/test_01_reading.py -v
 ```
 
 ## Takeaways

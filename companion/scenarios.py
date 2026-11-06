@@ -1,7 +1,7 @@
 """Lesson 11 — scenario tests for companion memory.
 
-    .venv/bin/python -m companion.scenarios              # all scenarios
-    .venv/bin/python -m companion.scenarios forget sam   # only those whose name contains a word
+    uv run python -m companion.scenarios              # all scenarios
+    uv run python -m companion.scenarios forget sam   # only those whose name contains a word
 
 Each scenario runs scripted sessions through the real LangGraph companion (real LLM calls,
 simulated dates), then checks the graph and the companion's replies. Every scenario uses its

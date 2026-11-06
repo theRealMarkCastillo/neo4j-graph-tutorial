@@ -1,6 +1,6 @@
 """Lesson 19 — choosing an embedding model: profiles, query instructions, re-embedding.
 
-    .venv/bin/python -m pytest tests/test_19_embeddings.py -v
+    uv run python -m pytest tests/test_19_embeddings.py -v
 
 These run on the local model by default (conftest.py sets that up), and a fake endpoint
 stands in for the remote one, so they check the wiring without an API key. With

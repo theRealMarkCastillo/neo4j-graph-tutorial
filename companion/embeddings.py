@@ -91,7 +91,7 @@ def profile_for(model: str) -> Profile:
     if model not in PROFILES:
         raise SystemExit(
             f"No thresholds measured for EMBED_MODEL={model!r}. Add a Profile for it in "
-            "companion/embeddings.py, measured with `python -m companion.calibrate` (Lesson 19).")
+            "companion/embeddings.py, measured with `uv run python -m companion.calibrate` (Lesson 19).")
     return PROFILES[model]
 
 

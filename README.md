@@ -9,8 +9,13 @@ AI companion — with every query's recorded output.
 ```bash
 cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–19
 docker compose up -d --build      # Neo4j 5 + APOC + Graph Data Science
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+uv sync                           # Python 3.12 + the exact tested versions, into .venv
 ```
+
+Needs [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`, or
+`brew install uv`). Every command below runs through `uv run`, which keeps `.venv` in step with
+`uv.lock`. Without uv: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`,
+then use `.venv/bin/python` wherever these docs say `uv run python`.
 
 - Neo4j Browser: http://localhost:7474 (user `neo4j`, password from `.env`)
 - Fresh database? Load the starting graph — see [Lesson 0](lessons/00-setup.md).
@@ -95,7 +100,7 @@ what runs where. It takes three more keys:
 | `EMBED_MODEL` | e.g. `Qwen/Qwen3-Embedding-8B`; needs a measured profile in `companion/embeddings.py` |
 | `EMBED_API_KEY` | optional, defaults to `LLM_API_KEY` |
 
-After switching, run `.venv/bin/python -m companion.reembed`. The default test run uses the
+After switching, run `uv run python -m companion.reembed`. The default test run uses the
 local model; the [release check](#release-check-on-the-model-you-ship) runs everything on yours. The reranker that labels unrelated recall matches also runs locally (`RERANK_MODEL`,
 default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding profile sets
 `weak_below`, Lesson 19). Local models are downloaded once and loaded once per process.
@@ -106,6 +111,8 @@ default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding 
 |---|---|
 | `Dockerfile`, `docker-compose.yml` | Neo4j 5.26 with APOC + GDS, data in named volumes |
 | `.env.example` → `.env` | Neo4j credentials and LLM keys (`.env` is git-ignored) |
+| `pyproject.toml`, `uv.lock`, `.python-version` | Dependencies, the exact tested versions, the Python version (`uv sync`) |
+| `requirements.txt` | The same pinned versions for pip, generated from `uv.lock` |
 | `config.py` | Loads `.env` for the scripts |
 | `seed/00_seed.cypher` | Starting graph for Lesson 1 |
 | `team_graph.py` | Lesson 4 — Python driver patterns |
@@ -131,10 +138,10 @@ default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding 
 Every lesson has tests in [`tests/`](tests), named after it (`test_05_vectors_and_graphrag.py`).
 
 ```bash
-.venv/bin/python -m pytest                    # unit + database tests: seconds, free (default)
-.venv/bin/python -m pytest -m "not db and not llm"   # unit tests only, no Neo4j needed
-.venv/bin/python -m pytest -m llm             # LLM evals: real calls, cost money
-EVAL_TRIALS=3 .venv/bin/python -m pytest -m llm tests/test_11_extraction_evals.py   # pass rates
+uv run python -m pytest                    # unit + database tests: seconds, free (default)
+uv run python -m pytest -m "not db and not llm"   # unit tests only, no Neo4j needed
+uv run python -m pytest -m llm             # LLM evals: real calls, cost money
+EVAL_TRIALS=3 uv run python -m pytest -m llm tests/test_11_extraction_evals.py   # pass rates
 ```
 
 A `-m` on the command line *replaces* the default `-m "not llm"` in `pytest.ini`, so spell
@@ -149,10 +156,10 @@ The default run pins the local embedding model, so it stays fast, free and offli
 rely on a change, run the tests, the LLM evals and the scenarios on the model in your `.env`:
 
 ```bash
-TEST_REMOTE_EMBEDDINGS=1 .venv/bin/python -m pytest              # ~5 min: every embedding is remote
-TEST_REMOTE_EMBEDDINGS=1 .venv/bin/python -m pytest -m llm       # LLM evals, costs money
-.venv/bin/python -m companion.scenarios                          # scripted conversations (use .env)
-.venv/bin/python -m companion.calibrate                          # are the thresholds still right?
+TEST_REMOTE_EMBEDDINGS=1 uv run python -m pytest              # ~5 min: every embedding is remote
+TEST_REMOTE_EMBEDDINGS=1 uv run python -m pytest -m llm       # LLM evals, costs money
+uv run python -m companion.scenarios                          # scripted conversations (use .env)
+uv run python -m companion.calibrate                          # are the thresholds still right?
 ```
 
 Tests that check a threshold read it from the active model's profile. Tests that are about one
@@ -164,16 +171,18 @@ failing is a regression.
 ## Common commands
 
 ```bash
-docker compose ps                 # status / health
-docker compose logs -f neo4j      # logs
-docker compose stop               # stop, keep data
-docker compose down -v            # stop and DELETE all data
-.venv/bin/python team_agent.py    # Lesson 7 agent (interactive)
-.venv/bin/python -m companion     # companion chat (/help for commands; --persona Coach, --sync)
-.venv/bin/python -m companion.web # Lessons 17-18 web UI on http://127.0.0.1:8000 (click a reply to see its trace)
-.venv/bin/python -m companion.demo   # scripted two-session companion demo
-.venv/bin/python -m companion.scenarios   # Lesson 11–16 scenario tests (real LLM calls)
-.venv/bin/python -m companion.calibrate   # Lesson 19: measure thresholds for the embedding model in .env
-.venv/bin/python -m companion.reembed     # Lesson 19: backfill vectors after switching models
-.venv/bin/python graphrag.py "Who should own our new Rust performance work?"
+docker compose ps                     # status / health
+docker compose logs -f neo4j          # logs
+docker compose stop                   # stop, keep data
+docker compose down -v                # stop and DELETE all data
+uv sync                               # after a pull: install the locked versions
+uv lock --upgrade                     # newer versions; then run the tests and commit uv.lock
+uv run python team_agent.py           # Lesson 7 agent (interactive)
+uv run python -m companion            # companion chat (/help for commands; --persona Coach, --sync)
+uv run python -m companion.web        # Lessons 17-18 web UI on http://127.0.0.1:8000 (click a reply to see its trace)
+uv run python -m companion.demo       # scripted two-session companion demo
+uv run python -m companion.scenarios  # Lesson 11–16 scenario tests (real LLM calls)
+uv run python -m companion.calibrate  # Lesson 19: measure thresholds for the embedding model in .env
+uv run python -m companion.reembed    # Lesson 19: backfill vectors after switching models
+uv run python graphrag.py "Who should own our new Rust performance work?"
 ```

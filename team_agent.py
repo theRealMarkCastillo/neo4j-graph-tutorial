@@ -1,7 +1,7 @@
 """Lesson 7 — a LangGraph agent that answers questions with tools over the team graph.
 
-    .venv/bin/python team_agent.py                       # interactive chat
-    .venv/bin/python team_agent.py "Who can back up Eve?"  # one question, then exit
+    uv run python team_agent.py                       # interactive chat
+    uv run python team_agent.py "Who can back up Eve?"  # one question, then exit
 
 The graph is the classic tool loop, built by hand so every piece is visible:
 

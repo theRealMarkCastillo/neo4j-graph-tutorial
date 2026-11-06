@@ -116,7 +116,7 @@ Modes: `.stream` (return), `.stats` (summary), `.mutate` (projection only), `.wr
 ## 4.6 — From Python: [`team_graph.py`](../team_graph.py)
 
 ```bash
-.venv/bin/python team_graph.py
+uv run python team_graph.py
 ```
 ```
 Active projects:

@@ -202,7 +202,7 @@ job already knew about Miso from the first.
 ## Test it — [`tests/test_14_production.py`](../tests/test_14_production.py)
 
 ```bash
-.venv/bin/python -m pytest tests/test_14_production.py -v     # 10 tests, ~2 s, no LLM
+uv run python -m pytest tests/test_14_production.py -v     # 10 tests, ~2 s, no LLM
 ```
 
 Concurrency bugs don't show up when you run one thing at a time, so each test **forces the

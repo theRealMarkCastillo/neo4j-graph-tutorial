@@ -69,8 +69,8 @@ carries the schema.
 ## Run it
 
 ```bash
-.venv/bin/python team_agent.py                                   # interactive
-.venv/bin/python team_agent.py "Who could back up Eve if she's out for a month?"
+uv run python team_agent.py                                   # interactive
+uv run python team_agent.py "Who could back up Eve if she's out for a month?"
 ```
 
 ## Output ([full log](outputs/07-team-agent.txt))

@@ -1,7 +1,7 @@
 """Lesson 17 — a small web UI for the companion.
 
-    .venv/bin/python -m companion.web                    # http://127.0.0.1:8000
-    .venv/bin/python -m companion.web --today 2026-11-20 # simulate a date (the page picks user and persona)
+    uv run python -m companion.web                    # http://127.0.0.1:8000
+    uv run python -m companion.web --today 2026-11-20 # simulate a date (the page picks user and persona)
 
 One page: the chat, the life graph, how strong each memory still is (Lesson 13 decay), and
 what the graph embeddings think belongs together (Lesson 15). Memory extraction runs on the

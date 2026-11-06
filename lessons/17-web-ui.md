@@ -5,8 +5,8 @@ how that changes as you talk: the life graph growing, memories fading, the graph
 grouping people.
 
 ```bash
-.venv/bin/python -m companion.web                      # http://127.0.0.1:8000
-.venv/bin/python -m companion.web --today 2026-11-20   # simulate a date
+uv run python -m companion.web                      # http://127.0.0.1:8000
+uv run python -m companion.web --today 2026-11-20   # simulate a date
 ```
 
 Pick a name and a persona (Sage or Coach), then Start.
@@ -97,7 +97,7 @@ Sage: A beagle! That is such wonderful news. Biscuit is an adorable name ...
 ## Test it — [`tests/test_17_web.py`](../tests/test_17_web.py)
 
 ```bash
-.venv/bin/python -m pytest tests/test_17_web.py -v    # 5 tests, ~2 s, no LLM
+uv run python -m pytest tests/test_17_web.py -v    # 5 tests, ~2 s, no LLM
 ```
 
 FastAPI's `TestClient` calls the app **in-process**: no server, no port, no browser. The chat

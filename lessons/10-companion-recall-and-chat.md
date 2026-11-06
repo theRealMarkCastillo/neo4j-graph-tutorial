@@ -77,8 +77,8 @@ Two extras make it feel like a companion rather than a chatbot:
 ## Terminal chat
 
 ```bash
-.venv/bin/python -m companion                  # uses COMPANION_USER / COMPANION_NAME from .env
-.venv/bin/python -m companion --user Sam --debug   # --debug prints the memory block each turn
+uv run python -m companion                  # uses COMPANION_USER / COMPANION_NAME from .env
+uv run python -m companion --user Sam --debug   # --debug prints the memory block each turn
 ```
 
 | Command | |
@@ -113,7 +113,7 @@ CLI Test: /quit
 ## The two-session demo — [`companion/demo.py`](../companion/demo.py)
 
 ```bash
-.venv/bin/python -m companion.demo
+uv run python -m companion.demo
 ```
 
 It uses a separate user, `Alex (demo)`, and wipes it first. Full output:

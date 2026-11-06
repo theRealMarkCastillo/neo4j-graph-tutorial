@@ -62,7 +62,7 @@ would still say "Dr. Lee — therapist".
 ## Using it
 
 ```bash
-.venv/bin/python -m companion --persona Coach
+uv run python -m companion --persona Coach
 ```
 
 `MemoryStore(driver, user, agent="Coach")`. The persona's voice comes from `ROLES` in
@@ -118,9 +118,9 @@ checks passed.
 ## Test it — [`tests/test_16_personas.py`](../tests/test_16_personas.py)
 
 ```bash
-.venv/bin/python -m pytest tests/test_16_personas.py -v       # 9 tests, ~2 s, no LLM
-.venv/bin/python -m pytest -m llm tests/test_16_personas.py   # "just between us" eval
-.venv/bin/python -m companion.scenarios personas
+uv run python -m pytest tests/test_16_personas.py -v       # 9 tests, ~2 s, no LLM
+uv run python -m pytest -m llm tests/test_16_personas.py   # "just between us" eval
+uv run python -m companion.scenarios personas
 ```
 
 **One test per read path.** The privacy rule lives in many queries, so a test that checks only

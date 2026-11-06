@@ -198,7 +198,7 @@ Seattle / Boston 0.636  Austin / Chicago 0.606 Theo / Leo 0.562          → kep
 A raw-extraction debug switch helped find it:
 
 ```bash
-COMPANION_DEBUG_EXTRACT=1 .venv/bin/python -m companion.scenarios cardinality
+COMPANION_DEBUG_EXTRACT=1 uv run python -m companion.scenarios cardinality
 ```
 
 Before finding the real cause, I added a backstop, `_sync_superseded_relations()`. When a

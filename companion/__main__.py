@@ -1,4 +1,4 @@
-"""Terminal chat with the companion:   .venv/bin/python -m companion [--user NAME] [--persona NAME] [--debug] [--sync]
+"""Terminal chat with the companion:   uv run python -m companion [--user NAME] [--persona NAME] [--debug] [--sync]
 
 Personas (Lesson 16) share the user's memory: --persona Coach sees shared memories, not what
 the user told Sage privately.

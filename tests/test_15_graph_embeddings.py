@@ -1,6 +1,6 @@
 """Lesson 15 — graph embeddings (FastRP + kNN) vs. node similarity on the life graph.
 
-    .venv/bin/python -m pytest tests/test_15_graph_embeddings.py -v
+    uv run python -m pytest tests/test_15_graph_embeddings.py -v
 
 The fixture graph is small and hand-made so the right answer is obvious to a human:
 a climbing crowd (Ana, Ben, Cy, Boulder Gym) and a work crowd (Dee, Eli, Acme).

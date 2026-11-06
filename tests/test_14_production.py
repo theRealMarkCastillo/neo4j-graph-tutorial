@@ -1,6 +1,6 @@
 """Lesson 14 — production hardening: transactions, one writer per user, background extraction.
 
-    .venv/bin/python -m pytest tests/test_14_production.py -v
+    uv run python -m pytest tests/test_14_production.py -v
 
 Concurrency bugs don't show up when you run one thing at a time, so these tests force the
 interleavings on purpose: a failure half-way through a write, two writers at the same moment,

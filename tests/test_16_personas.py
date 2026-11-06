@@ -1,7 +1,7 @@
 """Lesson 16 — several personas sharing one user's memory.
 
-    .venv/bin/python -m pytest tests/test_16_personas.py -v          # store rules, no LLM
-    .venv/bin/python -m pytest -m llm tests/test_16_personas.py      # does the extractor mark "just between us"?
+    uv run python -m pytest tests/test_16_personas.py -v          # store rules, no LLM
+    uv run python -m pytest -m llm tests/test_16_personas.py      # does the extractor mark "just between us"?
 
 Two stores for the same user: `sage` and `coach`. What the user tells one persona privately
 must never reach the other through ANY read path: recall, the people list, the extractor's

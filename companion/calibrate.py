@@ -1,7 +1,7 @@
 """Lesson 19 — measure the similarity thresholds for the active embedding model.
 
-    python -m companion.calibrate               the model in .env (EMBED_MODEL / EMBED_BASE_URL)
-    EMBED_BASE_URL= python -m companion.calibrate   the local default, for comparison
+    uv run python -m companion.calibrate               the model in .env (EMBED_MODEL / EMBED_BASE_URL)
+    EMBED_BASE_URL= uv run python -m companion.calibrate   the local default, for comparison
 
 Each threshold in companion/embeddings.py answers one yes/no question with a similarity cut.
 Below, each question has pairs labelled "yes" and "no". For the active model this prints both

@@ -17,8 +17,8 @@ EMBED_BASE_URL=https://api.deepinfra.com/v1/openai   # any OpenAI-compatible /em
 EMBED_MODEL=Qwen/Qwen3-Embedding-8B
 # EMBED_API_KEY defaults to LLM_API_KEY
 
-.venv/bin/python -m companion.reembed      # give existing memories a Qwen vector
-.venv/bin/python -m companion.web          # same app, new embeddings
+uv run python -m companion.reembed      # give existing memories a Qwen vector
+uv run python -m companion.web          # same app, new embeddings
 ```
 
 Leave `EMBED_BASE_URL` empty and everything runs on bge-small, as before.
@@ -102,8 +102,8 @@ come from `calibrate.py`, which holds labelled pairs for each decision. They're 
 went wrong once, plus near misses:
 
 ```bash
-.venv/bin/python -m companion.calibrate                    # the model in .env
-EMBED_BASE_URL= .venv/bin/python -m companion.calibrate    # bge-small, for comparison
+uv run python -m companion.calibrate                    # the model in .env
+EMBED_BASE_URL= uv run python -m companion.calibrate    # bge-small, for comparison
 ```
 
 ```
@@ -161,7 +161,7 @@ The trace shows `match 0.617 < 0.656` instead of a relevance logit. With bge-sma
 `weak_below`), the cross-encoder still decides.
 
 None of the calibration pairs prove the numbers are right on their own. The scenarios
-(`python -m companion.scenarios`) run the whole companion with the new profile, end to end. With
+(`uv run python -m companion.scenarios`) run the whole companion with the new profile, end to end. With
 the values above, all 53 scenario checks passed on Qwen3-8B, in two runs out of two.
 
 ## 4. Two models, one database
@@ -213,9 +213,9 @@ requirement.
 Memories stored before the switch have no Qwen vector, so vector search can't see them.
 
 ```bash
-.venv/bin/python -m companion.reembed              # only nodes missing a vector for this model
-.venv/bin/python -m companion.reembed --all        # all of them (e.g. after changing an instruction)
-.venv/bin/python -m companion.reembed --user Mark
+uv run python -m companion.reembed              # only nodes missing a vector for this model
+uv run python -m companion.reembed --all        # all of them (e.g. after changing an instruction)
+uv run python -m companion.reembed --user Mark
 ```
 
 It embeds the **same text the write path embeds**: `"Logan (person): Mark's son"` for an entity
@@ -266,7 +266,7 @@ smaller model locally.
 ## Test it — [`tests/test_19_embeddings.py`](../tests/test_19_embeddings.py)
 
 ```bash
-.venv/bin/python -m pytest tests/test_19_embeddings.py -v    # 11 tests, ~1 s, no key
+uv run python -m pytest tests/test_19_embeddings.py -v    # 11 tests, ~1 s, no key
 ```
 
 A fake endpoint stands in for the remote model. The tests check that:

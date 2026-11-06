@@ -1,4 +1,4 @@
-"""Scripted two-session demo (Lesson 10):   .venv/bin/python -m companion.demo
+"""Scripted two-session demo (Lesson 10):   uv run python -m companion.demo
 
 Session 1 (2026-11-05): a new user introduces themselves.
 Session 2 (2026-11-13): a week later — the companion should follow up on the presentation,

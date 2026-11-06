@@ -37,10 +37,22 @@ label, n
 
 ## Python environment (Lessons 4–5)
 
+The Python side is managed with [uv](https://docs.astral.sh/uv/). Install it once
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`, or `brew install uv`), then:
+
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+uv sync                      # downloads Python 3.12 if needed, installs uv.lock's versions into .venv
+uv run python -c "import neo4j, langgraph; print('ok')"
 ```
+
+- `pyproject.toml` lists what the course needs, `uv.lock` the exact versions it was tested
+  with, and `.python-version` the Python version.
+- `uv run …` runs a command inside `.venv`, syncing it first if the lock changed (after a
+  `git pull`, say). No activating, and no "works on my machine" from a stray upgrade.
+- **Without uv:** `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` installs
+  the same pinned versions (`requirements.txt` is generated from the lock). Then type
+  `.venv/bin/python` wherever the lessons say `uv run python`.
+- **Upgrading** is a deliberate step: `uv lock --upgrade`, run the tests, commit the new lock.
 
 All scripts read connection settings and keys from `.env` via [`config.py`](../config.py).
 
@@ -55,12 +67,14 @@ All scripts read connection settings and keys from `.env` via [`config.py`](../c
 | Neo4j Community | the free, single-database edition, in Docker | Enterprise (several databases, fine-grained access, clustering) or Aura (managed cloud) |
 | APOC / GDS | plugins: utility procedures / graph algorithms (Lessons 4, 15) | built-in Cypher |
 | test (unit / db / llm) | three layers, from free and instant to paid and variable | one undifferentiated test suite |
+| lockfile (`uv.lock`) | every package's exact version, the ones the course was tested with | `pyproject.toml`'s ranges (what's *allowed*) |
 
 **Design choices** (with alternatives in [design-decisions.md](../docs/design-decisions.md)):
 
 | We chose | Because | It costs | Instead, you could | |
 |---|---|---|---|---|
 | Neo4j 5.26 Community in Docker, data in named volumes | free, reproducible, the same on every laptop | no multi-database or access control features (see D4, D17) | Aura (no ops, costs money), Enterprise (isolation features), Neo4j Desktop | [D1](../docs/design-decisions.md#d1) |
+| uv with a lockfile | everyone runs the versions the outputs and tests came from; LangChain, LangGraph and the OpenAI SDK break things between majors | one more tool to install; upgrades are manual (`uv lock --upgrade`, then the tests) | `pip` + ranges in `requirements.txt` (drifts), Poetry or pip-tools (also lock, slower), conda | — |
 | Tests in three layers from Lesson 0 | cheap checks run constantly; paid LLM evals only on demand | LLM behaviour is only checked when you opt in | one suite, or LLM-as-judge on everything | [D20](../docs/design-decisions.md#d20) |
 
 ## Test it
@@ -68,9 +82,9 @@ All scripts read connection settings and keys from `.env` via [`config.py`](../c
 Every lesson from here on has tests in [`tests/`](../tests). Run them early and often:
 
 ```bash
-.venv/bin/python -m pytest                 # fast tests: unit + database, a few seconds, free
-.venv/bin/python -m pytest tests/test_00_setup.py -v
-.venv/bin/python -m pytest -m llm          # LLM evals: real calls, cost money, vary run to run
+uv run python -m pytest                 # fast tests: unit + database, a few seconds, free
+uv run python -m pytest tests/test_00_setup.py -v
+uv run python -m pytest -m llm          # LLM evals: real calls, cost money, vary run to run
 ```
 
 Three kinds of test, cheapest first. Most of the suite is the first two.
