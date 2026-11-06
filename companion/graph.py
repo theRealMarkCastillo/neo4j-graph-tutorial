@@ -9,6 +9,8 @@
 - log:      save both turns to the Episode
 - remember: extract memories (latest exchange + earlier turns as context), write to the graph
             — skipped by a cheap conditional edge for turns like "lol ok" or "thanks!"
+            — with a `Background` worker (Lesson 14) it only queues the job and returns, so
+              the reply never waits for extraction
 
 close_episode() runs the end-of-episode pass: a second extraction over the whole transcript,
 then the diary summary.
@@ -26,13 +28,20 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 
-from config import COMPANION_NAME, chat_model
+from config import chat_model
 from companion import clock
+from companion.worker import Background
 from companion.extract import extract_episode, extract_memories, find_pattern, line, summarize_episode
 from companion.store import MemoryStore, format_context
 
+# Lesson 16: personas share the user's memory. Each has its own voice; unknown names get the default.
+ROLES = {
+    "Coach": "an upbeat fitness and habits coach who keeps things practical",
+}
+DEFAULT_ROLE = "a warm, thoughtful AI companion and assistant"
+
 PERSONA = """\
-You are {name}, a warm, thoughtful AI companion and assistant for {user}. It is now {today}.
+You are {name}, {role} for {user}. It is now {today}.
 
 You have a long-term memory of {user}'s life, shown below. Use it the way a good friend would:
 - Weave memories in naturally. Never list them or say "according to my memory".
@@ -85,18 +94,32 @@ def _today(config: RunnableConfig) -> dt.date:
     return config["configurable"].get("today") or dt.date.today()
 
 
-def build_companion(store: MemoryStore):
+def _redact(messages: list, terms: list[str]) -> list:
+    """Copies of the messages that mention a forgotten name, with the name replaced. Returned
+    as a state update they replace the originals (same message ids)."""
+    pattern = re.compile(r"\b(" + "|".join(map(re.escape, terms)) + r")\b", re.I)
+    return [m.model_copy(update={"content": pattern.sub("[forgotten]", m.content)})
+            for m in messages if pattern.search(m.content)]
+
+
+def build_companion(store: MemoryStore, background: Background | None = None):
+    """The companion graph. With `background`, memory extraction runs on that worker."""
     llm = chat_model()
+    to_redact: list[str] = []  # names forgotten by a background job, scrubbed on the next turn
 
     def recall(state: CompanionState, config: RunnableConfig):
         query = state["messages"][-1].content
         found = store.recall(query, today=_today(config))
-        return {"memory_context": format_context(found, _today(config))}
+        update = {"memory_context": format_context(found, _today(config))}
+        if to_redact:
+            terms = [to_redact.pop() for _ in range(len(to_redact))]
+            update["messages"] = _redact(state["messages"], terms)
+        return update
 
     def respond(state: CompanionState, config: RunnableConfig):
         today = _today(config)
         system = SystemMessage(PERSONA.format(
-            name=COMPANION_NAME, user=store.user_name,
+            name=store.agent, role=ROLES.get(store.agent, DEFAULT_ROLE), user=store.user_name,
             today=clock.describe(clock.now_for(today)),
             memory=state["memory_context"],
         ))
@@ -108,7 +131,7 @@ def build_companion(store: MemoryStore):
     def log(state: CompanionState, config: RunnableConfig):
         episode_id = config["configurable"]["thread_id"]
         store.log_turn(episode_id, store.user_name, state["messages"][-2].content)
-        store.log_turn(episode_id, COMPANION_NAME, state["messages"][-1].content)
+        store.log_turn(episode_id, store.agent, state["messages"][-1].content)
         return {"memory_log": []}
 
     def route(state: CompanionState) -> str:
@@ -119,23 +142,33 @@ def build_companion(store: MemoryStore):
     def remember(state: CompanionState, config: RunnableConfig):
         episode_id, today = config["configurable"]["thread_id"], _today(config)
         *before, user_msg, reply = state["messages"]
-        earlier = [(store.user_name if isinstance(m, HumanMessage) else COMPANION_NAME, m.content)
+        earlier = [(store.user_name if isinstance(m, HumanMessage) else store.agent, m.content)
                    for m in before]  # extract_memories marks the companion's lines as non-sources
         window = " ".join(text for _, text in earlier[-2:]) + " " + user_msg.content
-        extraction = extract_memories(
-            store.user_name, user_msg.content, reply.content,
-            candidates=store.extraction_candidates(window, today=today),
-            entities=store.known_entities(),
-            today=today, earlier=earlier,
-        )
-        if os.environ.get("COMPANION_DEBUG_EXTRACT"):  # print the raw LLM extraction
-            print("     raw extraction:", extraction.model_dump_json(exclude_defaults=True))
-        log = store.apply(extraction, episode_id, today)
-        update = {"memory_log": log}
-        if store.forgotten_terms:  # also scrub the live conversation, or the next turn re-learns it
-            pattern = re.compile(r"\b(" + "|".join(map(re.escape, store.forgotten_terms)) + r")\b", re.I)
-            update["messages"] = [m.model_copy(update={"content": pattern.sub("[forgotten]", m.content)})
-                                  for m in state["messages"] if pattern.search(m.content)]
+        said, answered = user_msg.content, reply.content
+
+        def job() -> list[str]:
+            # Candidates are read INSIDE the job: queued jobs run in order, so this one sees
+            # what the previous one wrote.
+            extraction = extract_memories(
+                store.user_name, said, answered,
+                candidates=store.extraction_candidates(window, today=today),
+                entities=store.known_entities(),
+                today=today, earlier=earlier, companion=store.agent,
+            )
+            if os.environ.get("COMPANION_DEBUG_EXTRACT"):  # print the raw LLM extraction
+                print("     raw extraction:", extraction.model_dump_json(exclude_defaults=True))
+            log = store.apply(extraction, episode_id, today)
+            to_redact.extend(store.forgotten_terms)
+            return log
+
+        if background is not None:
+            background.submit(job)
+            return {"memory_log": []}
+        update = {"memory_log": job()}
+        if to_redact:  # also scrub the live conversation, or the next turn re-learns it
+            terms = [to_redact.pop() for _ in range(len(to_redact))]
+            update["messages"] = _redact(state["messages"], terms)
         return update
 
     g = StateGraph(CompanionState)
@@ -155,8 +188,8 @@ def greeting(store: MemoryStore, today: dt.date) -> str:
     """Opening line for a new session, so the companion can follow up proactively."""
     found = store.recall("how are things going, plans and recent events", today=today)
     if not any(found[k] for k in ("core", "semantic", "people", "episodes")):
-        return f"Hi {store.user_name}, I'm {COMPANION_NAME}. I'd love to get to know you — how's your day going?"
-    system = PERSONA.format(name=COMPANION_NAME, user=store.user_name,
+        return f"Hi {store.user_name}, I'm {store.agent}. I'd love to get to know you — how's your day going?"
+    system = PERSONA.format(name=store.agent, role=ROLES.get(store.agent, DEFAULT_ROLE), user=store.user_name,
                             today=clock.describe(clock.now_for(today)),
                             memory=format_context(found, today))
     prompt = (f"{store.user_name} just opened a new chat. Greet them in one or two sentences. "

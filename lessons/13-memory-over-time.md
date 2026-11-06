@@ -276,3 +276,7 @@ little each time, which is how it found a case the fixed fake data in the unit t
   after consolidation has had its chance.
 - Facts don't fade, they go stale: check them instead of dropping them.
 - Measure thresholds on real examples, and pick a clustering rule that can't chain.
+
+## Next
+
+[Lesson 14](14-production-hardening.md) makes the write path safe for failures and concurrency, and moves extraction to the background.

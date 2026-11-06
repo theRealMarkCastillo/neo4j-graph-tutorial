@@ -33,11 +33,15 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | 11 | [Harder scenarios and evals](lessons/11-harder-scenarios-and-evals.md) | Context-window + end-of-episode extraction, same-name people, ended relations, history, forgetting, sensitive memories, scenario tests |
 | 12 | [An ontology for the life graph](lessons/12-ontology.md) | Relation vocabulary, synonyms, hierarchy, symmetric/inverse/cardinality/range rules, kinship inference, `(:RelType)` nodes; terms in the [glossary](docs/glossary.md) |
 | 13 | [Memory over time](lessons/13-memory-over-time.md) | Expiry (`valid_until`, status memories), decay and staleness, consolidation into habits, pruning, one testable clock |
+| 14 | [Production hardening](lessons/14-production-hardening.md) | One transaction per write, a user-node lock against duplicate races, background extraction, thread safety |
+| 15 | [Graph embeddings](lessons/15-graph-embeddings.md) | FastRP + kNN vs. node similarity on the life graph, Cypher projections, seeds and cut-offs |
+| 16 | [Personas](lessons/16-personas.md) | Several companions sharing one memory: private vs. shared memories, hiding derived data, per-persona diaries |
+| 17 | [A web UI](lessons/17-web-ui.md) | FastAPI + one HTML page: chat, life graph, decay curves, related entities; API tests with a fake LLM |
 
 **Architecture:** component, LangGraph, sequence, data-model and lifecycle diagrams for the
 agent and the companion are in [docs/architecture.md](docs/architecture.md).
 
-## LLM settings (lessons 5 and 7–13)
+## LLM settings (lessons 5 and 7–17)
 
 Any OpenAI-compatible endpoint with tool calling works (OpenAI, DeepInfra, OpenRouter,
 Ollama, LM Studio, vLLM...). Set in `.env`:
@@ -69,10 +73,13 @@ Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
 | `companion/scenarios.py` | Lessons 11–12 — multi-session scenario tests for memory |
 | `companion/ontology.py` | Lesson 12 — relation-type ontology: vocabulary, rules, inference |
 | `companion/clock.py`, `companion/decay.py` | Lesson 13 — one clock; the forgetting curve |
-| `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–13 |
+| `companion/worker.py` | Lesson 14 — background extraction worker |
+| `companion/insights.py` | Lesson 15 — graph embeddings (FastRP + kNN) and node similarity |
+| `companion/web.py`, `companion/static/` | Lesson 17 — web UI (FastAPI + one HTML page) |
+| `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–17 |
 | `tests/`, `pytest.ini` | Per-lesson tests and LLM evals (see *Tests and evals*) |
 | `docs/glossary.md` | Glossary of overlapping memory / graph / ontology terms |
-| `lessons/outputs/` | Recorded runs for lessons 7, 10, 11, 12 and 13 |
+| `lessons/outputs/` | Recorded runs for lessons 7, 10, 11, 12, 13 and 17 |
 
 ## Tests and evals
 
@@ -99,8 +106,9 @@ docker compose logs -f neo4j      # logs
 docker compose stop               # stop, keep data
 docker compose down -v            # stop and DELETE all data
 .venv/bin/python team_agent.py    # Lesson 7 agent (interactive)
-.venv/bin/python -m companion     # Lesson 10 companion chat (/help for commands)
+.venv/bin/python -m companion     # companion chat (/help for commands; --persona Coach, --sync)
+.venv/bin/python -m companion.web # Lesson 17 web UI on http://127.0.0.1:8000
 .venv/bin/python -m companion.demo   # scripted two-session companion demo
-.venv/bin/python -m companion.scenarios   # Lesson 11–13 scenario tests (real LLM calls)
+.venv/bin/python -m companion.scenarios   # Lesson 11–16 scenario tests (real LLM calls)
 .venv/bin/python graphrag.py "Who should own our new Rust performance work?"
 ```

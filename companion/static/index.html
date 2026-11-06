@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Companion</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e3e3e0;
+    --accent: #2f6f5e; --accent-soft: #e3efe9; --me: #2f6f5e; --me-ink: #ffffff; --warn: #a3542a;
+    --k-person: #2f6f5e; --k-place: #3a6ea5; --k-organization: #8a5a9e; --k-pet: #b5733a;
+    --k-activity: #5f8a3a; --k-thing: #7a7a7a; --k-self: #1d1d1f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151517; --panel: #1e1e21; --ink: #ececec; --muted: #9a9aa0; --line: #2e2e33;
+      --accent: #7cc4ad; --accent-soft: #23332e; --me: #2f6f5e; --me-ink: #ffffff; --warn: #e09a6b;
+      --k-person: #7cc4ad; --k-place: #7fb0e0; --k-organization: #c39bd6; --k-pet: #e0a774;
+      --k-activity: #a8cf7f; --k-thing: #a0a0a0; --k-self: #ececec;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px;
+           border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  input, select, button { font: inherit; color: inherit; }
+  input, select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  button { background: var(--accent); color: var(--bg); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { color: var(--muted); font-size: 13px; margin-left: auto; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; padding: 16px;
+         height: calc(100vh - 58px); }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; height: auto; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+            display: flex; flex-direction: column; min-height: 420px; overflow: hidden; }
+  #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; }
+  .bot { background: var(--accent-soft); align-self: flex-start; }
+  .me { background: var(--me); color: var(--me-ink); align-self: flex-end; }
+  .note { color: var(--muted); font-size: 13px; align-self: flex-start; padding-left: 4px; }
+  form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  form input { flex: 1; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs button { background: none; color: var(--muted); border-radius: 0; padding: 10px 14px;
+                 border-bottom: 2px solid transparent; }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+  .pane { flex: 1; overflow: auto; padding: 12px; display: none; }
+  .pane.on { display: block; }
+  svg text { fill: var(--ink); font-size: 12px; }
+  .axis path, .axis line { stroke: var(--line); }
+  .axis text { fill: var(--muted); }
+  .hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td, th { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  .bar { height: 6px; background: var(--accent); border-radius: 3px; }
+  .dim { color: var(--muted); }
+  #tip { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+         border-radius: 6px; padding: 6px 8px; font-size: 12px; max-width: 280px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Companion</h1>
+  <input id="user" placeholder="your name" size="10">
+  <select id="persona"><option>Sage</option><option>Coach</option></select>
+  <button id="start">Start</button>
+  <button id="end" class="ghost" disabled>End &amp; save</button>
+  <span id="status">not started</span>
+</header>
+<main>
+  <section>
+    <div id="messages"><div class="note">Pick a name and a persona, then Start.</div></div>
+    <form id="send"><input id="text" placeholder="Say something…" autocomplete="off" disabled>
+      <button id="go" disabled>Send</button></form>
+  </section>
+  <section>
+    <div class="tabs">
+      <button data-pane="graph" class="on">Life graph</button>
+      <button data-pane="strength">Memory strength</button>
+      <button data-pane="related">Related</button>
+    </div>
+    <div id="graph" class="pane on"><p class="hint">People, places and things this persona may see. Node size = memories about it.</p><svg id="g" width="100%" height="460"></svg></div>
+    <div id="strength" class="pane"><p class="hint">How strong each memory is over the next 30 days (Lesson 13). Below the dashed line it's dormant: kept, but no longer recalled. Facts and preferences don't fade.</p><svg id="s" width="100%" height="300"></svg><table id="mt"></table></div>
+    <div id="related" class="pane"><p class="hint">What the graph embeddings put together (Lesson 15). Suggestions, not facts.</p>
+      <input id="rname" placeholder="a name, or empty for top pairs"> <select id="rmethod"><option value="fastrp">FastRP + kNN</option><option value="jaccard">Node similarity</option></select>
+      <button id="rgo" class="ghost">Find</button><table id="rt"></table></div>
+  </section>
+</main>
+<div id="tip"></div>
+<script>
+const $ = id => document.getElementById(id);
+const api = async (path, body) => {
+  const r = await fetch(path, body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+};
+const say = (cls, text) => { const d = document.createElement("div"); d.className = cls; d.textContent = text;
+  $("messages").appendChild(d); $("messages").scrollTop = 1e9; };
+const notes = lines => lines.forEach(l => say("note", "✎ " + l));
+let polling = null, persona = "";
+
+function setStarted(on) {
+  ["text", "go", "end"].forEach(id => $(id).disabled = !on);
+}
+
+$("start").onclick = async () => {
+  $("start").disabled = true; $("status").textContent = "starting…";
+  try {
+    const s = await api("/api/session", {user: $("user").value || "Guest", persona: $("persona").value});
+    persona = s.persona; $("messages").innerHTML = ""; notes(s.log);
+    say("bot", s.greeting); setStarted(true);
+    $("status").textContent = `${s.user} with ${s.persona} · ${s.today}`; $("text").focus(); refresh();
+  } catch (e) { $("status").textContent = e.message; }
+  $("start").disabled = false;
+};
+
+$("end").onclick = async () => {
+  setStarted(false); $("status").textContent = "saving…";
+  try { notes((await api("/api/end", {})).log); $("status").textContent = "saved"; }
+  catch (e) { $("status").textContent = e.message; }
+};
+
+$("send").onsubmit = async ev => {
+  ev.preventDefault();
+  const text = $("text").value.trim(); if (!text) return;
+  $("text").value = ""; say("me", text); $("go").disabled = true;
+  try { say("bot", (await api("/api/chat", {text})).reply); poll(); }
+  catch (e) { say("note", "error: " + e.message); }
+  $("go").disabled = false; $("text").focus();
+};
+
+// Memory updates arrive from the background worker (Lesson 14): poll until it's idle.
+function poll() {
+  clearTimeout(polling);
+  polling = setTimeout(async () => {
+    const r = await api("/api/log").catch(() => ({lines: [], busy: false}));
+    if (r.lines.length) { notes(r.lines); refresh(); }
+    if (r.busy) poll();
+  }, 1200);
+}
+
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button, .pane").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); $(b.dataset.pane).classList.add("on"); refresh();
+});
+
+function refresh() {
+  const on = document.querySelector(".tabs .on").dataset.pane;
+  if (on === "graph") drawGraph(); else if (on === "strength") drawStrength();
+}
+
+const tip = $("tip");
+const showTip = (ev, html) => { tip.innerHTML = html; tip.style.display = "block";
+  tip.style.left = Math.min(ev.clientX + 12, innerWidth - 300) + "px"; tip.style.top = ev.clientY + 12 + "px"; };
+const hideTip = () => tip.style.display = "none";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const kindColor = k => getComputedStyle(document.documentElement).getPropertyValue("--k-" + k).trim() || "#888";
+
+let sim = null;
+async function drawGraph() {
+  const data = await api("/api/graph").catch(() => null); if (!data) return;
+  const svg = d3.select("#g"); svg.selectAll("*").remove();
+  const W = $("g").clientWidth, H = 460;
+  if (sim) sim.stop();
+  const nodes = data.nodes.map(d => ({...d})), links = data.edges.map(d => ({...d}));
+  sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(90))
+    .force("charge", d3.forceManyBody().strength(-260))
+    .force("center", d3.forceCenter(W / 2, H / 2))
+    .force("collide", d3.forceCollide(28));
+  const line = svg.append("g").selectAll("g").data(links).join("g");
+  const path = line.append("line").attr("stroke", "var(--line)").attr("stroke-width", 1.5);
+  const label = line.append("text").text(d => d.type).attr("fill", "var(--muted)").attr("font-size", 10).attr("text-anchor", "middle");
+  const node = svg.append("g").selectAll("g").data(nodes).join("g")
+    .call(d3.drag().on("start", (e, d) => { if (!e.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; })
+                   .on("drag", (e, d) => { d.fx = e.x; d.fy = e.y; })
+                   .on("end", (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = d.fy = null; }))
+    .on("mousemove", (e, d) => showTip(e, `<b>${esc(d.name)}</b> (${esc(d.kind)})<br>${esc(d.summary)}<br><span class="dim">${d.memories} memories</span>`))
+    .on("mouseleave", hideTip);
+  node.append("circle").attr("r", d => d.kind === "self" ? 14 : 6 + Math.min(d.memories, 8) * 1.5)
+    .attr("fill", d => kindColor(d.kind)).attr("stroke", "var(--panel)").attr("stroke-width", 2);
+  node.append("text").text(d => d.name).attr("x", 12).attr("y", 4);
+  sim.on("tick", () => {
+    nodes.forEach(d => { d.x = Math.max(20, Math.min(W - 60, d.x)); d.y = Math.max(20, Math.min(H - 20, d.y)); });
+    path.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+    label.attr("x", d => (d.source.x + d.target.x) / 2).attr("y", d => (d.source.y + d.target.y) / 2 - 3);
+    node.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+}
+
+// strength(t) = importance/10 * 0.5^((age + t) / half-life) — the same formula as companion/decay.py
+async function drawStrength() {
+  const data = await api("/api/memories").catch(() => null); if (!data) return;
+  const ms = data.memories, svg = d3.select("#s"); svg.selectAll("*").remove();
+  const W = $("s").clientWidth, H = 300, m = {l: 36, r: 28, t: 10, b: 28}, days = d3.range(0, 31);
+  const x = d3.scaleLinear([0, 30], [m.l, W - m.r]), y = d3.scaleLinear([0, 1], [H - m.b, m.t]);
+  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(6).tickFormat(d => d ? `+${d}d` : "now"));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5));
+  svg.append("line").attr("x1", m.l).attr("x2", W - m.r).attr("y1", y(data.dormant_below)).attr("y2", y(data.dormant_below))
+    .attr("stroke", "var(--warn)").attr("stroke-dasharray", "4 4");
+  const strength = (d, t) => d.half_life ? d.importance / 10 * Math.pow(.5, (d.age_days + t) / d.half_life) : d.importance / 10;
+  svg.append("g").selectAll("path").data(ms).join("path")
+    .attr("fill", "none").attr("stroke-width", 2).attr("opacity", d => d.half_life ? .9 : .35)
+    .attr("stroke", d => d.half_life ? "var(--accent)" : "var(--muted)")
+    .attr("d", d => d3.line()(days.map(t => [x(t), y(strength(d, t))])))
+    .on("mousemove", (e, d) => showTip(e, `<b>[${esc(d.kind)}]</b> ${esc(d.text)}<br>now ${d.strength}${d.half_life ? `, half-life ${d.half_life}d` : ", doesn't fade"}`))
+    .on("mouseleave", hideTip);
+  $("mt").innerHTML = "<tr><th>Memory</th><th>Kind</th><th>Strength</th></tr>" + ms.slice().sort((a, b) => b.strength - a.strength).map(d =>
+    `<tr><td>${esc(d.text)}${d.private ? ' <span class="dim">(private)</span>' : ""}${d.dormant ? ' <span class="dim">(dormant)</span>' : ""}</td><td class="dim">${esc(d.kind)}</td>` +
+    `<td><div class="bar" style="width:${Math.round(d.strength * 80)}px"></div>${d.strength}</td></tr>`).join("");
+}
+
+$("rgo").onclick = async () => {
+  const q = new URLSearchParams({method: $("rmethod").value}); if ($("rname").value) q.set("name", $("rname").value);
+  const r = await api("/api/related?" + q).catch(e => ({related: [], error: e.message}));
+  $("rt").innerHTML = r.error ? `<tr><td>${esc(r.error)}</td></tr>` : r.related.length
+    ? "<tr><th>Entity</th><th>Related to</th><th>Score</th></tr>" + r.related.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.other)} <span class="dim">(${esc(d.kind)})</span></td><td>${d.score}</td></tr>`).join("")
+    : '<tr><td class="dim">Nothing above the cut-off yet: talk about a few more people and places.</td></tr>';
+};
+addEventListener("resize", () => refresh());
+</script>
+</body>
+</html>

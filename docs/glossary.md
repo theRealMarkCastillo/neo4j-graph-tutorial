@@ -9,7 +9,8 @@ where it shows up in this repo, and what it is often confused with.
 [Extraction](#extraction-text--structure) · [Retrieval](#retrieval) ·
 [Time and change](#time-and-change) · [Memory upkeep](#memory-upkeep-and-quality) ·
 [Privacy](#privacy-and-safety) · [Agents and LangGraph](#agents-and-langgraph) ·
-[Evaluation](#evaluation) · [Words with several meanings](#words-with-several-meanings)
+[Evaluation](#evaluation) · [Concurrency](#concurrency-and-transactions) ·
+[Graph data science](#graph-data-science) · [Words with several meanings](#words-with-several-meanings)
 
 ---
 
@@ -147,6 +148,10 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **Redaction** | Removing identifying text while keeping the record | `[forgotten]` in turns and summaries | deletion |
 | **Data minimization** | Store only what's needed | "Record only what's worth remembering", small-talk gate | — |
 | **Boundary** (our term) | A topic or person the user asked not to raise | `boundary` memories, filtered in Cypher | a forget request (boundary keeps the memory, hides the topic) |
+| **Persona** (our term) | One of several companions sharing a user's memory | `agent` on memories, relations and episodes; `--persona Coach` (Lesson 16) | a user (personas are the *other* side of the conversation) |
+| **Private memory** | Visible only to the persona that heard it | `private` flag: "just between us", or sensitive; never boundaries | sensitive (sensitive memories are private, not every private one is sensitive) |
+| **Visibility rule** | The filter deciding what a reader may see | `visible()` and `entity_visible()` in store.py, pasted into every read query | access control on the database (this is in the queries, not in Neo4j roles) |
+| **Derived data** | Data computed from other data: summaries, patterns, entities, embeddings | must be hidden along with the private memory it came from | the source data |
 
 ## Agents and LangGraph
 
@@ -157,6 +162,8 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **ReAct** | Reason → act → observe loop | The agent ⇄ tools loop | — |
 | **State graph / node / edge** | LangGraph's model: typed state, steps, transitions | `StateGraph(CompanionState)` | the Neo4j graph (unrelated graph!) |
 | **Conditional edge** | A transition chosen by a function | `tools_condition`, `worth_remembering` | a tool call |
+| **Background worker** | Code that runs a job on another thread so the caller doesn't wait | `companion/worker.py`: one thread, jobs in order (Lesson 14) | async/await (one thread taking turns; here it's a real second thread) |
+| **Fake** (test double) | A simple working stand-in for a real dependency | `FakeListChatModel`, fake extractors and pattern writers | a mock (which checks *how* it was called) |
 
 ## Evaluation
 
@@ -175,6 +182,32 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **hit@k** | Share of questions whose right answer is in the top k | `test_retrieval_hit_rate` (Lesson 5) | recall@k (share of *all* relevant items found) |
 | **Precision / recall@k** | Share of retrieved items that are relevant / share of relevant items retrieved | Not measured: each question has one right answer, so hit@k is used | our `recall()` function |
 | **Flakiness** | Same test, different results across runs | Why evals run several trials | a bug (it may be one) |
+| **Fault injection** | Making a step fail on purpose to test recovery | `monkeypatch` raising mid-`apply()` (Lesson 14) | chaos engineering (the same idea, in production) |
+| **Mutation check** | Breaking the code on purpose to see that a test fails | `visible()` → `"true"`: the four privacy tests failed (Lesson 16) | mutation testing tools (automated versions) |
+
+## Concurrency and transactions
+
+| Term | Meaning | In this repo | Often confused with |
+|---|---|---|---|
+| **Transaction** | A group of writes that commit or roll back together | `MemoryStore._write()`: one per `apply()` (Lesson 14) | a session (a connection that can run several transactions) |
+| **Managed transaction** | The driver runs your function and retries it on transient errors | `session.execute_write(unit)` | an auto-commit query (`execute_query`, one statement) |
+| **Rollback** | Undoing every write of an unfinished transaction | what happens when `apply()` raises | deleting data afterwards |
+| **Isolation level** | What one transaction sees of others | Neo4j: read committed. You never see others' uncommitted writes | serializable (would prevent the duplicate race, Neo4j's default doesn't) |
+| **Race condition** | The result depends on timing | check-then-act duplicate check: 4 writers → 4 copies without a lock | a deadlock |
+| **Write lock** | Held on a node you write to, until commit | `SET u.write_lock = datetime()` on the user node serializes writers per user | a Python `threading.Lock` (one process only) |
+| **Deadlock** | Two transactions each wait for a lock the other holds | Neo4j detects it and fails one, and `execute_write` retries it | a slow query |
+| **Thread-local** | A value each thread has its own copy of | the open transaction (`self._local.tx`), so recall never joins the worker's write | a global |
+
+## Graph data science
+
+| Term | Meaning | In this repo | Often confused with |
+|---|---|---|---|
+| **Projection** | An in-memory copy of part of the graph for GDS algorithms | `gds.graph.project(...)` per user (Lesson 15), always dropped | a Cypher projection of properties (`m {.id, .text}`) |
+| **Graph embedding** | A vector for a node, from its position in the graph | FastRP in `companion/insights.py` | a text embedding (from words) |
+| **FastRP** | Fast Random Projection: averages random neighbour vectors over 1, 2, … hops | `iterationWeights: [0.0, 1.0, 1.0]` | node2vec (random walks, slower) |
+| **kNN** | k-nearest neighbours of each node's vector | `gds.knn.stream`, cut at 0.6 (0.5 = unrelated) | a vector index search (one query vector) |
+| **Node similarity** | Jaccard over direct neighbours | `method="jaccard"`: exact, explainable, one hop | cosine similarity of embeddings |
+| **Random seed** | Fixes a randomized algorithm's choices | `randomSeed: 42, concurrency: 1` for repeatable tests | — |
 
 ---
 

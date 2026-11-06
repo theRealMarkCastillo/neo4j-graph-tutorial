@@ -34,6 +34,7 @@ class MemoryOut(BaseModel):
     valid_until: str | None = Field(default=None, description="ISO date-time ('2026-11-18T14:00') after which this stops being true. Required for status; for a feeling about today, the end of today; null for lasting things")
     annual_date: str | None = Field(default=None, description="'MM-DD' for dates that repeat every year (birthdays, anniversaries)")
     sensitive: bool = Field(default=False, description="true for health, mental health, sexuality, religion, finances, legal trouble or trauma")
+    private: bool = Field(default=False, description="true if the user asked to keep it between you two ('just between us', 'don't tell anyone')")
     supersedes: list[str] = Field(default_factory=list, description="ids of existing memories this replaces")
 
 

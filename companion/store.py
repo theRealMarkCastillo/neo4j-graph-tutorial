@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import threading
 import uuid
 from functools import partial
 
@@ -15,7 +16,7 @@ import numpy as np
 
 from fastembed import TextEmbedding
 
-from config import EMBED_MODEL
+from config import COMPANION_NAME, EMBED_MODEL
 from companion import clock, decay, ontology
 from companion.models import Extraction
 from companion.schema import ensure_schema
@@ -114,6 +115,20 @@ NOT_PROTECTED = """NOT EXISTS {
 # (Its variable names must not clash with the query it's pasted into: an outer `e` would
 # silently turn "any entity" into "this entity" inside the EXISTS.)
 
+
+def visible(v: str) -> str:
+    """Lesson 16: may the current persona ($agent) see this memory or relation? Shared ones,
+    its own private ones, and old ones from before personas existed (no agent)."""
+    return f"({v}.agent IS NULL OR {v}.agent = $agent OR NOT coalesce({v}.private, false))"
+
+
+def entity_visible(e: str) -> str:
+    """An entity only another persona knows about, privately, is hidden too: its name and
+    summary would give the private memory away ("Dr. Lee, the user's therapist")."""
+    return (f"(EXISTS {{ MATCH ({e})<-[:ABOUT]-(vm:Memory) WHERE {visible('vm')} }}"
+            f" OR EXISTS {{ MATCH ()-[vr:RELATED]-({e}) WHERE {visible('vr')} }}"
+            f" OR NOT EXISTS {{ MATCH ({e})<-[:ABOUT|RELATED]-() }})")
+
 def _annual(md: str | None) -> str | None:
     return md if md and re.fullmatch(r"\d{2}-\d{2}", md) else None
 
@@ -132,10 +147,17 @@ def _next_occurrence(md: str, today: dt.date) -> dt.date | None:
 
 
 class MemoryStore:
-    def __init__(self, driver, user_name: str):
+    def __init__(self, driver, user_name: str, agent: str | None = None):
         self.driver = driver
         self.user_name = user_name
         self.user = f"user:{user_name.lower()}"
+        # Which persona this store reads and writes for (Lesson 16). Several personas can share
+        # one user's memory; each sees shared memories plus its own private ones.
+        self.agent = agent or COMPANION_NAME
+        # The write transaction this thread is inside, if any (Lesson 14). Thread-local: with
+        # extraction in a background thread, the chat thread's recall must not run its
+        # queries inside the worker's open transaction.
+        self._local = threading.local()
         ensure_schema(driver)
         global _ontology_loaded
         if not _ontology_loaded:
@@ -152,10 +174,40 @@ class MemoryStore:
         )
 
     def _q(self, query: str, now: dt.datetime | None = None, **params) -> list[dict]:
-        """Run a query with $user and $now always set ($now: the conversation's clock)."""
-        records, _, _ = self.driver.execute_query(
-            query, user=self.user, now=now or clock.now_for(dt.date.today()), **params)
+        """Run a query with $user and $now always set ($now: the conversation's clock).
+
+        Inside `_write()` it joins that transaction; otherwise it's its own auto-committed one."""
+        params = {"user": self.user, "agent": self.agent, "now": now or clock.now_for(dt.date.today()), **params}
+        tx = getattr(self._local, "tx", None)
+        if tx is not None:
+            return tx.run(query, **params).data()
+        records, _, _ = self.driver.execute_query(query, **params)
         return [r.data() for r in records]
+
+    def _write(self, work):
+        """Run `work()` as ONE write transaction for this user (Lesson 14).
+
+        - All or nothing: if anything fails half-way, every write rolls back.
+        - One writer per user: the first statement writes to the user's node, which takes
+          Neo4j's write lock on it until commit. A second writer for the same user (another
+          thread or process) waits there, then sees the first one's committed memories, so
+          its duplicate check works. Different users never wait for each other.
+        - execute_write retries transient errors (deadlocks, leader changes) by running
+          `work` again from the start, so `work` must not have side effects outside the graph.
+        Nested calls join the outer transaction."""
+        if getattr(self._local, "tx", None) is not None:
+            return work()
+
+        def unit(tx):
+            self._local.tx = tx
+            try:
+                tx.run("MATCH (u:User {id: $user}) SET u.write_lock = datetime()", user=self.user).consume()
+                return work()
+            finally:
+                self._local.tx = None
+
+        with self.driver.session() as session:
+            return session.execute_write(unit)
 
     # ------------------------------------------------------------------ episodes
     def start_episode(self, on: dt.date | None = None) -> str:
@@ -164,8 +216,9 @@ class MemoryStore:
         self._q(
             """
             OPTIONAL MATCH (prev:Episode {user: $user}) WHERE prev.ended_at IS NOT NULL
+              AND (prev.agent IS NULL OR prev.agent = $agent)  // each persona has its own diary
             WITH prev ORDER BY prev.started_at DESC LIMIT 1
-            CREATE (ep:Episode {id: $id, user: $user,
+            CREATE (ep:Episode {id: $id, user: $user, agent: $agent,
                                 started_at: CASE WHEN $on IS NULL THEN datetime()
                                                  ELSE datetime({date: $on, hour: 12}) END})
             FOREACH (_ IN CASE WHEN prev IS NULL THEN [] ELSE [1] END | MERGE (prev)-[:NEXT]->(ep))
@@ -285,14 +338,24 @@ class MemoryStore:
         return hit[0]["id"] if hit else None
 
     # ------------------------------------------------------------------ write path
+    @staticmethod
+    def _private(mem) -> bool:
+        """Private to the persona that heard it: asked ("just between us"), or sensitive.
+        Boundaries are never private: a boundary set with one persona protects with all."""
+        return mem.kind != "boundary" and (mem.private or mem.sensitive)
+
     def apply(self, ex: Extraction, episode_id: str | None = None, today: dt.date | None = None) -> list[str]:
-        """Store one extraction. Returns a human-readable log of what changed."""
+        """Store one extraction, all or nothing (one transaction). Returns a log of what changed."""
+        return self._write(lambda: self._apply(ex, episode_id, today))
+
+    def _apply(self, ex: Extraction, episode_id: str | None, today: dt.date | None) -> list[str]:
         today = today or dt.date.today()
         now = clock.now_for(today)
         q = partial(self._q, now=now)
         log: list[str] = []
         known: dict[str, str] = {}
         self.forgotten_terms: list[str] = []  # names forgotten by this call (the graph redacts its thread)
+        self.written_ids: list[str] = []      # memories created or reinforced by this call
         for ent in ex.entities:
             eid = self.resolve_entity(ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new)
             for n in [ent.name, *ent.aliases, *([ent.ref] if ent.ref else [])]:
@@ -329,6 +392,10 @@ class MemoryStore:
                 continue
             kept.append(item)
         resolved = kept
+        # Lesson 16: a relation to someone only PRIVATE memories mention is private too,
+        # or another persona's people list would give it away.
+        private_names = {n.lower() for m in ex.memories if self._private(m) for n in m.about}
+        shared_names = {n.lower() for m in ex.memories if not self._private(m) for n in m.about}
         linking = {(a, b, canon) for rel, a, b, canon, _ in resolved if not rel.ended}
         for rel, a, b, canon, how in resolved:
             if rel.ended and (a, b, canon) in linking:
@@ -373,10 +440,12 @@ class MemoryStore:
                 MERGE (a)-[r:RELATED {type: $type}]->(b)
                 WITH r, r.updated_at IS NULL OR r.until IS NOT NULL AS changed
                 SET r.since = coalesce($since, r.since), r.updated_at = $now, r.until = null,
-                    r.said = $said_as
+                    r.said = $said_as, r.agent = coalesce(r.agent, $agent),
+                    r.private = $private AND coalesce(r.private, true)  // once shared, stays shared
                 RETURN changed
                 """,
                 a=a, b=b, type=canon, since=rel.since, now=now, said_as=rel.type,
+                private=rel.target.lower() in private_names and rel.target.lower() not in shared_names,
             )[0]["changed"]
             if changed:  # only log new or re-activated links
                 log.append(f"linked {src} -{canon}-> {dst}{said}")
@@ -395,16 +464,21 @@ class MemoryStore:
 
         vectors = embed([m.text for m in ex.memories]) if ex.memories else []
         tombstones = self._tombstones(episode_id)
+        stored: list = []  # vectors created in THIS transaction: the vector index can't see them yet
         for mem, vec in zip(ex.memories, vectors):
             until = clock.parse_until(mem.valid_until, now, mem.kind)
             if tombstones and max(float(np.dot(vec, t)) for t in tombstones) >= FORGOTTEN_SCORE:
                 log.append("skipped a memory the user asked to forget earlier in this conversation")
+                continue
+            if any(float(np.dot(vec, v)) >= DUPLICATE_SCORE for v in stored):
+                log.append(f"skipped a repeat within this extraction: {mem.text}")
                 continue
             dup = q(
                 """
                 CALL db.index.vector.queryNodes('memory_vec', 50, $vec) YIELD node, score
                 WHERE node.user = $user AND node.invalidated_at IS NULL AND score >= $min
                   AND (node.valid_until IS NULL OR node.valid_until > $now)  // expired: say it again = new
+                  AND """ + visible("node") + """
                   // same dates too: "dentist on 2026-11-12" -> "...on 2026-11-17" reads almost the
                   // same but is a real correction; an identical "replacement" is just a duplicate
                   AND coalesce(node.due_on, date('1900-01-01')) = coalesce($due, date('1900-01-01'))
@@ -425,6 +499,7 @@ class MemoryStore:
                     id=dup[0]["id"], imp=mem.importance, until=until,
                 )
                 log.append(f"reinforced {dup[0]['id']}")
+                self.written_ids.append(dup[0]["id"])
                 # The near-copy may still be a correction ("brother is Leo" superseding "...Theo"):
                 # retire what it replaces, or the wrong memory stays current.
                 for old in q(
@@ -439,12 +514,15 @@ class MemoryStore:
                 continue
 
             mid = _new_id("m")
+            stored.append(vec)
+            self.written_ids.append(mid)
             about = [eid for n in (mem.about or ["user"]) if (eid := self._lookup(n, known))]
             retired = q(
                 """
                 CREATE (m:Memory {id: $id, user: $user, text: $text, kind: $kind, importance: $imp,
                                   occurred_on: $occurred, due_on: $due, annual_date: $annual,
                                   sensitive: $sensitive, valid_until: $until,
+                                  agent: $agent, private: $private,
                                   status: CASE WHEN $kind = 'plan' THEN 'open' ELSE null END,
                                   created_at: $now, access_count: 0})
                 WITH m CALL db.create.setNodeVectorProperty(m, 'embedding', $vec)
@@ -463,9 +541,10 @@ class MemoryStore:
                 id=mid, text=mem.text, kind=mem.kind, imp=mem.importance,
                 occurred=_to_date(mem.occurred_on), due=_to_date(mem.due_on),
                 annual=_annual(mem.annual_date), sensitive=mem.sensitive, until=until,
+                private=self._private(mem),
                 vec=vec, about=about, ep=episode_id or "", supersedes=mem.supersedes, now=now,
             )[0]["retired"]
-            flags = (" (sensitive)" if mem.sensitive else "") + (f" (yearly {mem.annual_date})" if _annual(mem.annual_date) else "")
+            flags = (" (sensitive)" if mem.sensitive else "") + (" (private)" if mem.private and not mem.sensitive else "") + (f" (yearly {mem.annual_date})" if _annual(mem.annual_date) else "")
             if until:
                 flags += f" (until {until:%Y-%m-%d %H:%M})"
             log.append(f"+ [{mem.kind}] {mem.text}{flags}" + (f"  (replaces {', '.join(retired)})" if retired else ""))
@@ -488,18 +567,21 @@ class MemoryStore:
             """
             CALL db.index.vector.queryNodes('memory_vec', 50, $vec) YIELD node AS m, score
             WHERE m.user = $user AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND coalesce(m.status, '') <> 'done'
+              AND """ + visible("m") + """
             WITH m ORDER BY score DESC LIMIT $k  // filter first, then keep the top k
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
             UNION
             MATCH (m:Memory)-[:ABOUT]->(e:Entity {user: $user}) WHERE e.kind <> 'self' AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
-              AND coalesce(m.status, '') <> 'done'
+              AND coalesce(m.status, '') <> 'done' AND """ + visible("m") + """
               AND any(n IN [e.name] + coalesce(e.aliases, []) WHERE size(n) > 2 AND toLower($text) CONTAINS toLower(n))
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
             UNION
             MATCH (m:Memory {user: $user, kind: 'plan', status: 'open'}) WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
+              AND """ + visible("m") + """
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
             UNION
             MATCH (m:Memory)-[:FROM]->(:Episode {id: $ep}) WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
+              AND """ + visible("m") + """
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
             """,
             k=k, vec=embed([text])[0], text=text, ep=episode_id or "",
@@ -510,8 +592,8 @@ class MemoryStore:
         """Entities shown to the extractor, with ids so it can tell two Sams apart."""
         rows = self._q(
             """
-            MATCH (e:Entity {user: $user}) WHERE e.kind <> 'self'
-            OPTIONAL MATCH (:User {id: $user})-[r:RELATED]->(e) WHERE r.until IS NULL
+            MATCH (e:Entity {user: $user}) WHERE e.kind <> 'self' AND """ + entity_visible("e") + """
+            OPTIONAL MATCH (:User {id: $user})-[r:RELATED]->(e) WHERE r.until IS NULL AND """ + visible("r") + """
             RETURN e.id AS id, e.name AS name, e.kind AS kind, e.summary AS summary,
                    collect(r.type) AS rel ORDER BY e.name
             """
@@ -526,6 +608,7 @@ class MemoryStore:
         edges = self._q(
             """
             MATCH (a:Entity {user: $user})-[r:RELATED]->(b:Entity {user: $user}) WHERE r.until IS NULL
+              AND """ + visible("r") + """
             RETURN a.id AS src, b.id AS dst, r.type AS type
             """
         )
@@ -553,11 +636,11 @@ class MemoryStore:
             """
             CALL () {
               MATCH (m:Memory {user: $user, kind: 'boundary'}) WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
-              RETURN m
+              RETURN m  // boundaries are never private: every persona respects them
               UNION
               MATCH (m:Memory {user: $user}) WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
                 AND m.kind IN ['fact', 'preference'] AND m.importance >= 6
-                AND NOT coalesce(m.sensitive, false) AND """ + NOT_PROTECTED + """
+                AND NOT coalesce(m.sensitive, false) AND """ + NOT_PROTECTED + """ AND """ + visible("m") + """
               WITH m ORDER BY m.importance DESC, m.created_at DESC LIMIT 8
               RETURN m
             }
@@ -573,7 +656,7 @@ class MemoryStore:
             """
             CALL db.index.vector.queryNodes('memory_vec', 50, $vec) YIELD node AS m, score
             WHERE m.user = $user AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND coalesce(m.status, '') <> 'done'
-              AND (m.kind = 'boundary' OR """ + NOT_PROTECTED + """)
+              AND (m.kind = 'boundary' OR """ + NOT_PROTECTED + """) AND """ + visible("m") + """
             WITH collect({m: m, score: score}) AS hits
             WITH hits, reduce(top = 0.0, h IN hits | CASE WHEN h.score > top THEN h.score ELSE top END) AS top
             UNWIND hits AS h
@@ -601,6 +684,7 @@ class MemoryStore:
         history = q(
             """
             MATCH (cur:Memory)-[:SUPERSEDES*1..3]->(m:Memory) WHERE cur.id IN $ids AND """ + NOT_PROTECTED + """
+              AND """ + visible("m") + """
             WITH cur, m AS old
             RETURN old.id AS id, old.text AS text, date(old.invalidated_at) AS until, cur.text AS replaced_by
             """,
@@ -632,10 +716,11 @@ class MemoryStore:
             }
             WITH e WHERE NOT EXISTS {  // entities protected by a boundary are never surfaced
               MATCH (b:Memory {kind: 'boundary'})-[:ABOUT]->(e) WHERE b.invalidated_at IS NULL AND (b.valid_until IS NULL OR b.valid_until > $now) }
-            OPTIONAL MATCH (:User {id: $user})-[r:RELATED]->(e) WHERE r.until IS NULL
+              AND """ + entity_visible("e") + """
+            OPTIONAL MATCH (:User {id: $user})-[r:RELATED]->(e) WHERE r.until IS NULL AND """ + visible("r") + """
             OPTIONAL MATCH (m:Memory)-[:ABOUT]->(e)
               WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND coalesce(m.status, '') <> 'done' AND NOT coalesce(m.sensitive, false)
-                AND """ + NOT_PROTECTED + """
+                AND """ + NOT_PROTECTED + """ AND """ + visible("m") + """
             WITH e, r, m ORDER BY m.importance DESC
             WITH e, head(collect(r.type)) AS relation,
                  collect(DISTINCT m {.id, .kind, .text, .importance,
@@ -654,7 +739,7 @@ class MemoryStore:
                 e["relation"] = f"{by_id[e['id']]['relation']}, inferred via {by_id[e['id']]['via_name']}"
         people = q(
             """
-            MATCH (:User {id: $user})-[r:RELATED]->(e:Entity) WHERE r.until IS NULL
+            MATCH (:User {id: $user})-[r:RELATED]->(e:Entity) WHERE r.until IS NULL AND """ + visible("r") + """
               AND NOT EXISTS { MATCH (b:Memory {kind: 'boundary'})-[:ABOUT]->(e) WHERE b.invalidated_at IS NULL AND (b.valid_until IS NULL OR b.valid_until > $now) }
             RETURN e.id AS id, e.name AS name, e.kind AS kind, r.type AS relation, e.summary AS summary
             ORDER BY e.kind, e.name LIMIT 25
@@ -667,7 +752,7 @@ class MemoryStore:
             MATCH (m:Memory {user: $user, kind: 'plan', status: 'open'})
             WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND m.due_on IS NOT NULL
               AND m.due_on >= $today - duration({days: 14}) AND m.due_on <= $today + duration({days: 14})
-              AND """ + NOT_PROTECTED + """
+              AND """ + NOT_PROTECTED + """ AND """ + visible("m") + """
             RETURN m.id AS id, m.text AS text, m.due_on AS due_on,
                    coalesce(m.sensitive, false) AS sensitive ORDER BY m.due_on
             """,
@@ -678,7 +763,7 @@ class MemoryStore:
         for m in q(
             """
             MATCH (m:Memory {user: $user}) WHERE m.annual_date IS NOT NULL AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
-              AND """ + NOT_PROTECTED + """
+              AND """ + NOT_PROTECTED + """ AND """ + visible("m") + """
             RETURN m.id AS id, m.text AS text, m.annual_date AS annual_date,
                    coalesce(m.sensitive, false) AS sensitive
             """
@@ -693,7 +778,7 @@ class MemoryStore:
             """
             MATCH (m:Memory {user: $user}) WHERE m.invalidated_at IS NULL
               AND m.valid_until <= $now AND m.valid_until > $now - duration({hours: $hours})
-              AND """ + NOT_PROTECTED + """
+              AND """ + NOT_PROTECTED + """ AND """ + visible("m") + """
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.valid_until AS until,
                    coalesce(m.sensitive, false) AS sensitive ORDER BY m.valid_until DESC LIMIT 5
             """,
@@ -702,6 +787,7 @@ class MemoryStore:
         episodes = q(
             """
             MATCH (ep:Episode {user: $user}) WHERE ep.summary IS NOT NULL
+              AND (ep.agent IS NULL OR ep.agent = $agent)  // summaries can quote private things
             RETURN ep.started_at AS at, ep.summary AS summary, ep.mood AS mood
             ORDER BY ep.started_at DESC LIMIT 3
             """
@@ -746,6 +832,7 @@ class MemoryStore:
                 """
                 MATCH (m:Memory {user: $user}) WHERE m.invalidated_at IS NULL AND m.consolidated_at IS NULL
                   AND m.kind IN ['event', 'status', 'feeling'] AND NOT coalesce(m.sensitive, false)
+                  AND NOT coalesce(m.private, false)  // a shared pattern must not be built from private memories
                   AND m.created_at > $now - duration({days: $days})
                 RETURN m.id AS id, m.text AS text, m.embedding AS vec ORDER BY m.created_at
                 """, days=PATTERN_WINDOW_DAYS)
@@ -753,30 +840,42 @@ class MemoryStore:
                 pattern = writer(self.user_name, [r["text"] for r in group], today)
                 if pattern is None:
                     continue
-                log += [f"pattern from {len(group)} memories: {line}"
-                        for line in self.apply(Extraction(memories=[pattern]), today=today)]
-                q(
-                    """
-                    MATCH (p:Memory {user: $user, text: $text}) WHERE p.invalidated_at IS NULL
-                    WITH p ORDER BY p.created_at DESC LIMIT 1
-                    MATCH (m:Memory) WHERE m.id IN $ids
-                    SET m.consolidated_at = $now MERGE (p)-[:SUMMARIZES]->(m)
-                    WITH p, count(m) AS n SET p.evidence = coalesce(p.evidence, 0) + n
-                    """, text=pattern.text, ids=[r["id"] for r in group])
-
+                log += self._write(lambda: self._store_pattern(pattern, group, today, now))
         if prune:
-            dormant = [r for r in q(
-                """
-                MATCH (m:Memory {user: $user}) WHERE m.kind IN ['status', 'feeling']
-                  AND m.importance <= $max_imp AND NOT EXISTS { (m)<-[:SUPERSEDES]-() }
-                  AND (m.consolidated_at IS NOT NULL OR m.created_at < $now - duration({days: $days}))
-                RETURN m.id AS id, m.kind AS kind, m.importance AS importance,
-                       duration.inSeconds(coalesce(m.last_confirmed, m.created_at), $now).seconds / 86400.0 AS age
-                """, max_imp=PRUNE_MAX_IMPORTANCE, days=PATTERN_WINDOW_DAYS) if decay.is_dormant(r["importance"], r["kind"], r["age"])]
-            if dormant:
-                q("MATCH (m:Memory) WHERE m.id IN $ids DETACH DELETE m", ids=[r["id"] for r in dormant])
-                log.append(f"pruned {len(dormant)} dormant status/feeling memories")
+            log += self._prune(now)
         return log
+
+    def _store_pattern(self, pattern, group: list[dict], today: dt.date, now: dt.datetime) -> list[str]:
+        """The pattern and its SUMMARIZES links commit together (the LLM call happened before
+        the transaction, so the user's write lock isn't held while waiting on it)."""
+        log = [f"pattern from {len(group)} memories: {line}"
+               for line in self.apply(Extraction(memories=[pattern]), today=today)]
+        # By id, not by text: if apply() reinforced an existing pattern ("goes to the gym
+        # regularly" vs "works out at the gym often"), the texts differ.
+        self._q(
+            """
+            MATCH (p:Memory {user: $user}) WHERE p.id IN $pattern
+            MATCH (m:Memory) WHERE m.id IN $ids
+            SET m.consolidated_at = $now MERGE (p)-[:SUMMARIZES]->(m)
+            WITH p, count(m) AS n SET p.evidence = coalesce(p.evidence, 0) + n
+            """, now=now, pattern=self.written_ids, ids=[r["id"] for r in group])
+        return log
+
+    def _prune(self, now: dt.datetime) -> list[str]:
+        """Delete dormant trivia: one statement, so it's atomic without _write()."""
+        dormant = [r for r in self._q(
+            """
+            MATCH (m:Memory {user: $user}) WHERE m.kind IN ['status', 'feeling']
+              AND m.importance <= $max_imp AND NOT EXISTS { (m)<-[:SUPERSEDES]-() }
+              AND (m.consolidated_at IS NOT NULL OR m.created_at < $now - duration({days: $days}))
+            RETURN m.id AS id, m.kind AS kind, m.importance AS importance,
+                   duration.inSeconds(coalesce(m.last_confirmed, m.created_at), $now).seconds / 86400.0 AS age
+            """, now=now, max_imp=PRUNE_MAX_IMPORTANCE, days=PATTERN_WINDOW_DAYS)
+            if decay.is_dormant(r["importance"], r["kind"], r["age"])]
+        if not dormant:
+            return []
+        self._q("MATCH (m:Memory) WHERE m.id IN $ids DETACH DELETE m", ids=[r["id"] for r in dormant])
+        return [f"pruned {len(dormant)} dormant status/feeling memories"]
 
     # ------------------------------------------------------------------ inspection
     def memories(self, kind: str | None = None, include_retired: bool = False,
@@ -788,12 +887,14 @@ class MemoryStore:
             WHERE ($kind IS NULL OR m.kind = $kind)
               AND ($asof IS NULL OR m.created_at <= $asof)  // as of `today`, if one is given
               AND ($all OR (m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)))
+              AND """ + visible("m") + """
             OPTIONAL MATCH (m)-[:ABOUT]->(e)
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.importance AS importance,
                    m.status AS status, m.invalidated_at IS NOT NULL AS retired,
                    m.valid_until AS valid_until, m.valid_until <= $now AS expired,
                    coalesce(m.sensitive, false) AS sensitive, m.annual_date AS annual_date,
-                   m.created_at AS created_at, collect(e.name) AS about
+                   m.created_at AS created_at, collect(e.name) AS about,
+                   m.agent AS agent, coalesce(m.private, false) AS private
             ORDER BY created_at
             """,
             kind=kind, all=include_retired, now=clock.now_for(today or dt.date.today()),
@@ -805,6 +906,7 @@ class MemoryStore:
             """
             MATCH (m:Memory {user: $user})
             WHERE m.kind IN ['event', 'plan'] AND coalesce(m.occurred_on, m.due_on) IS NOT NULL
+              AND """ + visible("m") + """
             RETURN coalesce(m.occurred_on, m.due_on) AS date, m.kind AS kind, m.text AS text,
                    m.status AS status, m.invalidated_at IS NOT NULL AS retired
             ORDER BY date
@@ -847,7 +949,11 @@ class MemoryStore:
 
     def forget_entity(self, name: str, known: dict[str, str] | None = None) -> dict | None:
         """"Forget everything about Jordan": delete the entity and every memory about or naming
-        it, and redact the name from stored turns and episode summaries."""
+        it, and redact the name from stored turns and episode summaries. One transaction:
+        a half-finished forget would leave the name in some places."""
+        return self._write(lambda: self._forget_entity(name, known))
+
+    def _forget_entity(self, name: str, known: dict[str, str] | None) -> dict | None:
         eid = self._lookup(name, known or {})
         if not eid or eid == self.user:
             return None
@@ -924,7 +1030,7 @@ class MemoryStore:
             DETACH DELETE n, t
             """
         )
-        self.__init__(self.driver, self.user_name)
+        self.__init__(self.driver, self.user_name, self.agent)
 
 
 SENSITIVE_NOTE = " (sensitive: only discuss if they raise it)"

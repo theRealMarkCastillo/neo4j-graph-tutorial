@@ -1,7 +1,14 @@
-"""Terminal chat with the companion:   .venv/bin/python -m companion [--user NAME] [--debug]
+"""Terminal chat with the companion:   .venv/bin/python -m companion [--user NAME] [--persona NAME] [--debug] [--sync]
+
+Personas (Lesson 16) share the user's memory: --persona Coach sees shared memories, not what
+the user told Sage privately.
+
+Memory extraction runs in the background (Lesson 14): its ✎ lines appear before your next
+prompt. --sync runs it inline instead, the way Lessons 10-13 did.
 
 Commands:  /memories [kind]  /all  /people  /timeline  /history <id>  /forget <id>
-           /forget-entity <name or id>  /recall <text>  /consolidate  /ontology  /debug  /new  /help  /quit
+           /forget-entity <name or id>  /recall <text>  /related [name]  /consolidate  /ontology
+           /debug  /new  /help  /quit
 """
 import argparse
 import datetime as dt
@@ -10,18 +17,25 @@ from langchain_core.messages import HumanMessage
 from neo4j import GraphDatabase
 
 from config import COMPANION_NAME, COMPANION_USER, NEO4J_AUTH, NEO4J_URI
-from companion import ontology
+from companion import insights, ontology
 from companion.extract import find_pattern
 from companion.graph import build_companion, close_episode, greeting, seed_thread
 from companion.store import MemoryStore, format_context
+from companion.worker import Background
 
 DIM, RESET, BOLD = "\033[2m", "\033[0m", "\033[1m"
 
 
-def end_session(store: MemoryStore, episode_id: str, today: dt.date) -> None:
-    print(f"{DIM}  (saving this conversation...){RESET}")
-    for line in close_episode(store, episode_id, today):
+def show_log(lines: list[str]) -> None:
+    for line in lines:
         print(f"{DIM}  ✎ {line}{RESET}")
+
+
+def end_session(store: MemoryStore, episode_id: str, today: dt.date, background: Background | None) -> None:
+    print(f"{DIM}  (saving this conversation...){RESET}")
+    if background:
+        show_log(background.wait())  # the episode pass must see every memory
+    show_log(close_episode(store, episode_id, today))
 
 
 def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None:
@@ -31,7 +45,7 @@ def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None
             flag = " (retired)" if m["retired"] else (f" [{m['status']}]" if m["status"] else "")
             if m["valid_until"]:
                 flag += f" ({'expired' if m['expired'] else 'until'} {m['valid_until'].to_native():%m-%d %H:%M})"
-            flag += (" 🔒" if m["sensitive"] else "") + (f" ↻{m['annual_date']}" if m["annual_date"] else "")
+            flag += (" 🔒" if m["sensitive"] else "") + (f" (private to {m['agent']})" if m["private"] else "") + (f" ↻{m['annual_date']}" if m["annual_date"] else "")
             print(f"  {m['id']}  [{m['kind']}] {m['text']}  ★{m['importance']}{flag}")
         print(f"  {len(rows)} memories")
     elif cmd == "/people":
@@ -57,6 +71,12 @@ def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None
     elif cmd == "/consolidate":
         for line in store.consolidate(today, writer=find_pattern) or ["nothing to do"]:
             print(f"  {line}")
+    elif cmd == "/related":  # Lesson 15: graph embeddings
+        rows = insights.related(store, arg or None, k=3 if arg else 10)
+        for r in rows:
+            print(f"  {r['name']} ~ {r['other']} ({r['kind']})  {r['score']}")
+        if not rows:
+            print("  nothing related yet (or not enough of a graph)")
     elif cmd == "/recall":
         print(format_context(store.recall(arg, today=today), today))
 
@@ -64,25 +84,30 @@ def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None
 def main() -> None:
     parser = argparse.ArgumentParser(description="Chat with a companion that remembers.")
     parser.add_argument("--user", default=COMPANION_USER)
+    parser.add_argument("--persona", default=COMPANION_NAME, help="who you're talking to (default from .env)")
     parser.add_argument("--debug", action="store_true", help="show the memory block each turn")
+    parser.add_argument("--sync", action="store_true", help="extract memories inline (slower replies)")
     args = parser.parse_args()
 
     driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
-    store = MemoryStore(driver, args.user)
-    app = build_companion(store)
+    store = MemoryStore(driver, args.user, agent=args.persona)
+    background = None if args.sync else Background()
+    app = build_companion(store, background)
     debug, today = args.debug, dt.date.today()
 
     def new_session() -> dict:
         episode_id = store.start_episode()
         hello = greeting(store, today)
         seed_thread(app, episode_id, hello)
-        print(f"\n{BOLD}{COMPANION_NAME}:{RESET} {hello}\n")
+        print(f"\n{BOLD}{store.agent}:{RESET} {hello}\n")
         return {"configurable": {"thread_id": episode_id, "today": today}}
 
     print(f"{DIM}Chatting as {args.user}. /help for commands.{RESET}")
     config = new_session()
     try:
         while True:
+            if background:
+                show_log(background.drain())  # memory updates that finished meanwhile
             text = input(f"{BOLD}{args.user}:{RESET} ").strip()
             if not text:
                 continue
@@ -96,9 +121,11 @@ def main() -> None:
                     debug = not debug
                     print(f"  debug {'on' if debug else 'off'}")
                 elif cmd == "/new":
-                    end_session(store, config["configurable"]["thread_id"], today)
+                    end_session(store, config["configurable"]["thread_id"], today, background)
                     config = new_session()
                 else:
+                    if background:  # show the graph with every queued update applied
+                        show_log(background.wait())
                     show_command(store, cmd, arg.strip(), today)
                 continue
             for update in app.stream({"messages": [HumanMessage(text)]}, config, stream_mode="updates"):
@@ -106,14 +133,15 @@ def main() -> None:
                 if node == "recall" and debug:
                     print(f"{DIM}--- memory ---\n{out['memory_context']}\n--------------{RESET}")
                 elif node == "respond":
-                    print(f"\n{BOLD}{COMPANION_NAME}:{RESET} {out['messages'][-1].content}\n")
+                    print(f"\n{BOLD}{store.agent}:{RESET} {out['messages'][-1].content}\n")
                 elif node == "remember":
-                    for line in out["memory_log"]:
-                        print(f"{DIM}  ✎ {line}{RESET}")
+                    show_log(out["memory_log"])
     except (EOFError, KeyboardInterrupt):
         print()
     finally:
-        end_session(store, config["configurable"]["thread_id"], today)
+        end_session(store, config["configurable"]["thread_id"], today, background)
+        if background:
+            background.close()
         driver.close()
 
 

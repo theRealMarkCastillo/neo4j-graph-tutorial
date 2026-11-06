@@ -18,7 +18,7 @@ from typing import Callable
 from langchain_core.messages import HumanMessage
 from neo4j import GraphDatabase
 
-from config import COMPANION_NAME, NEO4J_AUTH, NEO4J_URI
+from config import NEO4J_AUTH, NEO4J_URI
 from companion.graph import build_companion, close_episode, greeting, seed_thread
 from companion.store import MemoryStore, format_context
 
@@ -29,6 +29,7 @@ D = dt.date
 class Run:
     """What happened in a scenario, for the checks to inspect."""
     store: MemoryStore
+    stores: dict[str, MemoryStore] = field(default_factory=dict)  # by persona (Lesson 16)
     greetings: list[str] = field(default_factory=list)    # one per session
     replies: list[list[str]] = field(default_factory=list)  # per session, per message
     extracted: list[list[bool]] = field(default_factory=list)  # did `remember` run for each message?
@@ -47,7 +48,7 @@ class Run:
 class Scenario:
     name: str
     about: str
-    sessions: list[tuple[dt.date, list[str]]]
+    sessions: list[tuple]  # (date, messages) or (date, messages, persona)
     checks: list[tuple[str, Callable[[Run], bool]]]
 
 
@@ -274,6 +275,27 @@ SCENARIOS = [
         ],
     ),
     Scenario(
+        "personas", "What the user tells one persona privately never reaches another",
+        [
+            (D(2026, 11, 18), ["I signed up for the Chicago half marathon in March!",
+                               "Just between us, I get really bad panic attacks before big races."], "Sage"),
+            (D(2026, 11, 19), ["Can you help me plan my training for this week?"], "Coach"),
+        ],
+        [
+            ("the panic attacks are private to Sage", lambda r: bool(r.q(
+                """MATCH (m:Memory {user: $user}) WHERE toLower(m.text) CONTAINS 'panic'
+                     AND m.private AND m.agent = 'Sage' RETURN m"""))),
+            ("Coach knows about the half marathon", lambda r: "marathon" in format_context(
+                r.stores["Coach"].recall("my training plan", today=D(2026, 11, 19)), D(2026, 11, 19)).lower()),
+            ("nothing Coach sees mentions panic", lambda r: "panic" not in format_context(
+                r.stores["Coach"].recall("how do I feel before big races?", today=D(2026, 11, 19)),
+                D(2026, 11, 19)).lower()),
+            ("Coach's replies use the race and never mention panic or anxiety", lambda r:
+                r.mentions(" ".join(r.replies[1]), "marathon", "half", "race")
+                and not r.mentions(" ".join(r.greetings[1:] + r.replies[1]), "panic", "anxi")),
+        ],
+    ),
+    Scenario(
         "situational", "Short-lived statuses expire, get a follow-up, and roll up into a habit",
         [
             (D(2026, 11, 18), ["Heading to the gym, talk later!"]),
@@ -300,9 +322,15 @@ def run_scenario(driver, sc: Scenario, verbose: bool = True) -> list[tuple[str, 
     store = MemoryStore(driver, f"eval {sc.name}")
     store.wipe()
     store.user_name = "Riley"  # display name in prompts
-    app = build_companion(store)
-    run = Run(store)
-    for n, (today, messages) in enumerate(sc.sessions, 1):
+    run = Run(store, stores={store.agent: store})
+    apps = {store.agent: build_companion(store)}
+    for n, (today, messages, *persona) in enumerate(sc.sessions, 1):
+        if persona and persona[0] not in run.stores:  # another persona, same user
+            other = MemoryStore(driver, f"eval {sc.name}", agent=persona[0])
+            other.user_name = "Riley"
+            run.stores[persona[0]], apps[persona[0]] = other, build_companion(other)
+        store = run.stores[persona[0] if persona else run.store.agent]
+        app = apps[store.agent]
         episode_id = store.start_episode(on=today)
         hello = greeting(store, today)
         seed_thread(app, episode_id, hello)
@@ -310,7 +338,7 @@ def run_scenario(driver, sc: Scenario, verbose: bool = True) -> list[tuple[str, 
         run.replies.append([])
         run.extracted.append([])
         if verbose:
-            print(f"  -- session {n} ({today})\n  {COMPANION_NAME}: {hello}")
+            print(f"  -- session {n} ({today})\n  {store.agent}: {hello}")
         config = {"configurable": {"thread_id": episode_id, "today": today}}
         for text in messages:
             if verbose:
@@ -321,7 +349,7 @@ def run_scenario(driver, sc: Scenario, verbose: bool = True) -> list[tuple[str, 
                 if node == "respond":
                     run.replies[-1].append(out["messages"][-1].content)
                     if verbose:
-                        print(f"  {COMPANION_NAME}: {out['messages'][-1].content}")
+                        print(f"  {store.agent}: {out['messages'][-1].content}")
                 elif node == "remember":
                     ran = True
                     if verbose:

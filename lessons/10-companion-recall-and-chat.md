@@ -214,8 +214,9 @@ Later lessons build on this:
 - **[Lesson 13](13-memory-over-time.md)**: expiry, decay, and a consolidation job that rolls
   repeated memories up into habits and prunes faded trivia.
 
-Still open, if you want to go further:
-- **Run extraction in the background** (a queue or `asyncio` task) so replies never wait on it.
-- **Graph embeddings** (`gds.fastRP`) on the life graph to find related people and themes.
-- **Multi-user / multi-agent**: the `user` property already scopes everything; add an `agent`
-  property to give several personas their own view of the same person.
+- **[Lesson 14](14-production-hardening.md)**: transactions, a lock against duplicate writes,
+  and extraction in the background so replies never wait on it.
+- **[Lesson 15](15-graph-embeddings.md)**: graph embeddings (`gds.fastRP`) on the life graph to
+  find related people and themes.
+- **[Lesson 16](16-personas.md)**: several personas with their own view of the same person.
+- **[Lesson 17](17-web-ui.md)**: a web page showing the chat, the graph and the decay curves.

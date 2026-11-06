@@ -1,6 +1,6 @@
 # Architecture — the team agent and the companion
 
-Diagrams for the code in Lessons 7–11. They are [Mermaid](https://mermaid.js.org/), which
+Diagrams for the code in Lessons 7–17. They are [Mermaid](https://mermaid.js.org/), which
 GitHub renders inline.
 
 | # | Diagram | Type |
@@ -23,6 +23,11 @@ GitHub renders inline.
 | 16 | [Ontology — two layers in Neo4j](#16-ontology--two-layers-in-neo4j) | graph |
 | 17 | [Memory over time — a status's life](#17-memory-over-time--a-statuss-life) | state |
 | 18 | [Memory over time — the upkeep job](#18-memory-over-time--the-upkeep-job) | flowchart |
+| 19 | [Production — a message with background extraction](#19-production--a-message-with-background-extraction) | sequence |
+| 20 | [Production — two writers, one user](#20-production--two-writers-one-user) | sequence |
+| 21 | [Graph embeddings — from graph to related pairs](#21-graph-embeddings--from-graph-to-related-pairs) | flowchart |
+| 22 | [Personas — who sees what](#22-personas--who-sees-what) | flowchart |
+| 23 | [Web UI — components](#23-web-ui--components) | component |
 
 Terms used here are defined in the [glossary](glossary.md).
 
@@ -659,3 +664,108 @@ flowchart TD
     prune --> done([log lines])
 ```
 
+---
+
+## 19. Production — a message with background extraction
+
+The reply doesn't wait for extraction (Lesson 14). The worker runs jobs one at a time, in order.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant G as LangGraph companion
+    participant W as Background worker (1 thread)
+    participant S as MemoryStore
+    participant N as Neo4j
+    participant L as LLM
+
+    U->>G: message
+    G->>S: recall()
+    S->>N: read queries (auto-commit, chat thread)
+    G->>L: persona + memories + recent turns
+    L-->>G: reply
+    G->>S: log_turn() x2
+    G->>W: submit(job)
+    G-->>U: reply (no waiting)
+    W->>S: extraction_candidates() (sees earlier jobs' writes)
+    W->>L: extract_memories()
+    L-->>W: Extraction
+    W->>S: apply() → _write()
+    S->>N: BEGIN · lock user node · all writes · COMMIT
+    W-->>U: ✎ log lines (drain() before the next prompt / GET /api/log)
+```
+
+---
+
+## 20. Production — two writers, one user
+
+Without the lock both duplicate checks find nothing and both create. With it, the second
+waits, then sees the first one's memory.
+
+```mermaid
+sequenceDiagram
+    participant A as Writer A
+    participant N as Neo4j
+    participant B as Writer B
+    A->>N: BEGIN, SET user.write_lock (lock taken)
+    B->>N: BEGIN, SET user.write_lock
+    Note over B,N: blocked until A commits
+    A->>N: duplicate check: none → CREATE memory
+    A->>N: COMMIT (lock released)
+    N-->>B: lock granted
+    B->>N: duplicate check: finds A's memory → reinforce
+    B->>N: COMMIT
+```
+
+---
+
+## 21. Graph embeddings — from graph to related pairs
+
+```mermaid
+flowchart LR
+    life[("this user's entities + current memories<br/>ABOUT / RELATED edges")] --> filter["leave out: the user node, sensitive,<br/>private to others, boundary-protected"]
+    filter --> proj["gds.graph.project(...)<br/>in-memory, undirected"]
+    proj --> fastrp["FastRP<br/>128 dims, weights [0, 1, 1], seed 42"]
+    fastrp --> knn["kNN over entities<br/>topK, seed 42, concurrency 1"]
+    knn --> cut["score > 0.6<br/>(0.5 = unrelated)"]
+    proj --> jac["node similarity (Jaccard)<br/>shared direct neighbours"]
+    cut --> out(["/related, GET /api/related"])
+    jac --> out
+    proj -. "finally" .-> drop["gds.graph.drop"]
+```
+
+---
+
+## 22. Personas — who sees what
+
+```mermaid
+flowchart TD
+    m["memory / relation / episode<br/>agent = who heard it"] --> b{"boundary?"}
+    b -- yes --> shared["shared: every persona respects it"]
+    b -- no --> p{"'just between us'<br/>or sensitive?"}
+    p -- no --> shared2["shared"]
+    p -- yes --> priv["private to that persona"]
+    priv --> hide["also hidden from others:<br/>entities only it mentions, their relations,<br/>episode summaries, patterns, graph insights"]
+    shared2 --> reads["every read path:<br/>visible(v) = v.agent IS NULL OR v.agent = $agent<br/>OR NOT v.private"]
+    priv --> reads
+```
+
+---
+
+## 23. Web UI — components
+
+```mermaid
+flowchart LR
+    browser(["browser<br/>index.html + d3"]) -- "fetch JSON" --> api["FastAPI<br/>companion/web.py"]
+    api --> chat["Chat<br/>store · LangGraph app · worker · episode"]
+    chat --> store["MemoryStore<br/>(same code as the CLI)"]
+    chat --> worker["Background worker"]
+    worker --> store
+    api --> ins["insights.related()"]
+    ins --> store
+    store --> neo[("Neo4j")]
+    chat --> llm(["LLM"])
+    worker --> llm
+    browser -. "poll GET /api/log<br/>while busy" .-> api
+```

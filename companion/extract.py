@@ -50,6 +50,9 @@ Rules:
    facts, preferences and past events get no valid_until.
 4. sensitive = true for health (physical or mental), diagnoses, medication, sexuality, religion,
    finances/debt, legal trouble, and trauma.
+   private = true when {user} asks to keep something between the two of you ("just between
+   us", "don't tell anyone", "keep this to yourself"). Only for that request: sensitive
+   memories are private automatically.
 5. Boundaries: a REQUEST not to discuss someone or something — "don't bring her up", "I'd
    rather not talk about my dad", "please stop asking about work" — becomes a `boundary`
    memory (importance 9) with the protected person or topic in `about` (resolve "her" from
@@ -196,7 +199,7 @@ def line(user: str, who: str, text: str) -> str:
 
 def extract_memories(user: str, user_msg: str, assistant_msg: str, candidates: list[dict],
                      entities: list[str], today: dt.date | None = None,
-                     earlier: list[tuple[str, str]] = ()) -> Extraction:
+                     earlier: list[tuple[str, str]] = (), companion: str = COMPANION_NAME) -> Extraction:
     """Per-turn pass. `earlier` = (speaker, text) pairs before the latest exchange.
 
     Boundaries are safety-critical, so a regex tripwire double-checks the LLM: if the message
@@ -205,7 +208,7 @@ def extract_memories(user: str, user_msg: str, assistant_msg: str, candidates: l
     context = "\n".join(line(user, who, text) for who, text in earlier[-CONTEXT_TURNS:])
     content = (f"Earlier in this conversation:\n{context}\n\n" if context else "") + \
               f"LATEST EXCHANGE:\n{user}: <message>{user_msg}</message>\n" + \
-              line(user, COMPANION_NAME, assistant_msg)
+              line(user, companion, assistant_msg)
     system = _system(TURN_SYSTEM, user, candidates, entities, today)
     ex = _run(system, content)
     if BOUNDARY_HINT.search(user_msg) and not any(m.kind == "boundary" for m in ex.memories):
