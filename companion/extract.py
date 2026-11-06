@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from config import COMPANION_NAME, LLM_EXTRACTION_MODEL, chat_model
 from companion import clock, ontology
+from observability import traced
 from companion.models import EpisodeSummary, Extraction, MemoryOut, Pattern
 
 RULES = """\
@@ -232,6 +233,8 @@ def line(user: str, who: str, text: str) -> str:
     return f"{who}: {text}" if who == user else f"({who}, context only — not a source) {text}"
 
 
+# Traced with its exact arguments: companion.trace_to_case turns a trace into an eval case.
+@traced("extract_memories", "CHAIN")
 def extract_memories(user: str, user_msg: str, assistant_msg: str, candidates: list[dict],
                      entities: list[str], today: dt.date | None = None,
                      earlier: list[tuple[str, str]] = (), companion: str = COMPANION_NAME) -> Extraction:
@@ -258,6 +261,7 @@ def extract_memories(user: str, user_msg: str, assistant_msg: str, candidates: l
     return ex
 
 
+@traced("extract_episode", "CHAIN")
 def extract_episode(user: str, transcript: str, candidates: list[dict], entities: list[str],
                     today: dt.date | None = None, refresh: bool = False) -> Extraction:
     """End-of-episode pass over the whole transcript. `refresh`: an old transcript read

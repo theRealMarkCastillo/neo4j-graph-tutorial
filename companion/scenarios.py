@@ -18,6 +18,7 @@ from typing import Callable
 from langchain_core.messages import HumanMessage
 from neo4j import GraphDatabase
 
+import observability
 from config import NEO4J_AUTH, NEO4J_URI
 from companion.graph import build_companion, close_episode, greeting, seed_thread
 from companion.store import MemoryStore, format_context
@@ -376,13 +377,24 @@ def main() -> None:
     words = [w.lower() for w in sys.argv[1:]]
     chosen = [s for s in SCENARIOS if not words or any(w in s.name for w in words)]
     driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
-    summary = []
+    summary, rows = [], []
+    # With MLflow tracing on: one run, one trace per scenario (every session, LLM call and
+    # graph write in it), and each check's verdict attached to that trace.
+    observability.start_eval_run("scenarios", scenarios=",".join(s.name for s in chosen))
     for sc in chosen:
         print(f"\n=== {sc.name}: {sc.about}")
-        results = run_scenario(driver, sc)
+        with observability.span(f"scenario {sc.name}", inputs={"about": sc.about}) as sp:
+            results = run_scenario(driver, sc)
+            if sp is not None:
+                sp.set_outputs({desc: ok for desc, ok in results})
         for desc, ok in results:
             print(f"  {'PASS' if ok else 'FAIL'}  {desc}")
+            if sp is not None:
+                observability.record_verdict(sp.trace_id, desc, ok, source=f"scenario {sc.name}")
+            rows.append({"case": f"{sc.name}: {desc}", "outcome": "passed" if ok else "failed",
+                         "trace_id": sp.trace_id if sp is not None else ""})
         summary.append((sc.name, sum(ok for _, ok in results), len(results)))
+    observability.finish_eval_run(rows)
     print("\n=== Summary")
     for name, passed, total in summary:
         print(f"  {name:<22} {passed}/{total}")

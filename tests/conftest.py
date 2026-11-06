@@ -105,52 +105,23 @@ def trials(check):
 
 
 # ---------------------------------------------------------------- MLflow eval logging (optional)
-# With MLFLOW_TRACKING_URI set (observability.py), `pytest -m llm` becomes one MLflow run:
-#   params   the models, EVAL_TRIALS and a hash of the prompts, so runs can be compared;
-#   metrics  passed / failed / pass_rate;
-#   evals.json  one row per case: outcome, duration, the failure, and its trace id;
-#   traces   each case is one trace holding every LLM call its trials made.
-# The pass/fail verdict is still pytest's; MLflow is where you compare runs and read the prompts.
+# With MLFLOW_TRACKING_URI set (observability.py), `pytest -m llm` becomes one MLflow run. Each
+# case is one trace holding every LLM call its trials made, with pytest's verdict attached to
+# it as feedback. pytest still decides pass or fail; MLflow keeps the history.
 import observability  # noqa: E402
 
 _eval_rows: list[dict] = []
 _trace_key = pytest.StashKey[str]()
 
 
-def _start_eval_run():
-    import hashlib
-    import subprocess
-
-    import mlflow
-
-    root = Path(__file__).resolve().parents[1]
-    prompts = hashlib.sha256()
-    for f in ("companion/extract.py", "companion/graph.py"):  # where the prompts live
-        prompts.update((root / f).read_bytes())
-    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root,
-                         capture_output=True, text=True).stdout.strip()
-    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=root,
-                           capture_output=True, text=True).stdout.strip()
-    mlflow.start_run(run_name=f"evals {sha}{'+dirty' if dirty else ''}")
-    mlflow.log_params({
-        "llm_model": config.LLM_MODEL, "extraction_model": config.LLM_EXTRACTION_MODEL,
-        "embed_model": config.EMBED_MODEL, "eval_trials": os.environ.get("EVAL_TRIALS", "1"),
-        "prompts_sha": prompts.hexdigest()[:12], "git_sha": sha, "git_dirty": bool(dirty),
-    })
-
-
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_call(item):
-    """Each LLM eval case runs inside one span, so all its trials' LLM calls form one trace."""
+    """Run each LLM eval case inside one span, so its trials' LLM calls form one trace."""
     if not (observability.enabled() and item.get_closest_marker("llm")):
         yield
         return
-    import mlflow
-
-    if mlflow.active_run() is None:
-        _start_eval_run()
-    with observability.span(item.nodeid.split("::")[-1], "CHAIN",
-                            inputs={"test": item.nodeid}) as sp:
+    observability.start_eval_run("evals", eval_trials=os.environ.get("EVAL_TRIALS", "1"))
+    with observability.span(item.name, "CHAIN", inputs={"test": item.nodeid}) as sp:
         observability.tag_trace(eval_case=item.nodeid)
         item.stash[_trace_key] = sp.trace_id
         outcome = yield
@@ -166,24 +137,14 @@ def pytest_runtest_makereport(item, call):
     if not (observability.enabled() and item.get_closest_marker("llm")):
         return
     if report.when == "call" or (report.when == "setup" and report.skipped):
-        _eval_rows.append({
-            "case": item.nodeid, "outcome": report.outcome,
-            "seconds": round(report.duration, 2),
-            "failure": str(report.longrepr)[-4000:] if report.failed else "",
-            "trace_id": item.stash.get(_trace_key, ""),
-        })
+        trace_id = item.stash.get(_trace_key, "")
+        failure = str(call.excinfo.value)[:4000] if report.failed and call.excinfo else ""
+        _eval_rows.append({"case": item.nodeid, "outcome": report.outcome,
+                           "seconds": round(report.duration, 2), "failure": failure,
+                           "trace_id": trace_id})
+        if report.when == "call":
+            observability.record_verdict(trace_id, "passed", report.passed, failure, item.nodeid)
 
 
 def pytest_sessionfinish(session):
-    if not (observability.enabled() and _eval_rows):
-        return
-    import mlflow
-
-    if mlflow.active_run() is None:  # every case was skipped before it ran
-        return
-    passed = sum(r["outcome"] == "passed" for r in _eval_rows)
-    failed = sum(r["outcome"] == "failed" for r in _eval_rows)
-    mlflow.log_metrics({"passed": passed, "failed": failed,
-                        "pass_rate": passed / (passed + failed) if passed + failed else 0.0})
-    mlflow.log_table({k: [r[k] for r in _eval_rows] for k in _eval_rows[0]}, "evals.json")
-    mlflow.end_run("FAILED" if failed else "FINISHED")
+    observability.finish_eval_run(_eval_rows)

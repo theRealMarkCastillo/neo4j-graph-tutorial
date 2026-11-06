@@ -180,6 +180,7 @@ default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding 
 | `companion/web.py`, `companion/static/` | Lessons 17–18 — web UI (FastAPI + one HTML page) and the per-turn memory trace |
 | `companion/embeddings.py`, `calibrate.py`, `reembed.py` | Lesson 19 — local or remote embeddings, per-model thresholds, measuring them, backfilling vectors |
 | `companion/reextract.py` | Lesson 20 — re-read stored conversations under the current extraction rules |
+| `companion/trace_to_case.py` | Turn a traced extraction (MLflow) into a new eval case (see *Tests and evals*) |
 | `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–17 (the *how*; design-decisions.md is the *why*) |
 | `tests/`, `pytest.ini` | Per-lesson tests and LLM evals (see *Tests and evals*) |
 | `docs/glossary.md` | Glossary of overlapping memory / graph / ontology terms, with a section per overloaded word |
@@ -227,12 +228,29 @@ Open http://localhost:5001, experiment `companion`:
   the Neo4j spans `store.recall`, `store.extraction_candidates`, `store.apply`), grouped by
   session. Background extraction is its own trace in the same session. An eval case is one
   trace holding every LLM call its trials made.
-- **Runs**: each `pytest -m llm` session logs the models, `EVAL_TRIALS`, a hash of the prompt
-  files, `passed`/`failed`/`pass_rate`, and an `evals.json` table with each case's failure
-  and trace id. Compare runs to see which prompt or model change broke a case.
+- **Runs**: each `pytest -m llm` session and each `python -m companion.scenarios` run is one
+  MLflow run. It logs the models, `EVAL_TRIALS`, a hash of the prompt files, the git commit,
+  `passed`/`failed`/`pass_rate`, and an `evals.json` table of every case with its trace id.
+- **Verdicts on traces**: each case's pass/fail is attached to its trace as feedback (a pytest
+  case gets `passed`; a scenario gets one entry per check, with the check's wording). Filter
+  to the failures and read the exact prompts that produced them.
 
-pytest still decides pass or fail; MLflow keeps the history. [`observability.py`](observability.py)
-does the setup, and the hooks are at the end of [`tests/conftest.py`](tests/conftest.py).
+pytest and the scenario checks still decide pass or fail; MLflow records the verdicts and keeps
+the history. [`observability.py`](observability.py) does the setup and logging; the pytest hooks
+are at the end of [`tests/conftest.py`](tests/conftest.py).
+
+**From a bad chat turn to a new eval case.** When a traced chat stores something wrong, open
+that turn's `remember` trace in the UI, copy its id, and run:
+
+```bash
+uv run --group observability python -m companion.trace_to_case tr-...            # print the case
+uv run --group observability python -m companion.trace_to_case tr-... --append   # add it to the evals
+```
+
+It writes a case for [`tests/test_11_extraction_evals.py`](tests/test_11_extraction_evals.py)
+that replays the extraction with the exact inputs the trace recorded, and shows what the model
+returned in a comment. Write the check for the rule that broke (it should fail), fix the prompt,
+rerun `pytest -m llm`, and compare the two runs in MLflow.
 
 ### Release check: on the model you ship
 
