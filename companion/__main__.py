@@ -1,7 +1,7 @@
 """Terminal chat with the companion:   .venv/bin/python -m companion [--user NAME] [--debug]
 
 Commands:  /memories [kind]  /all  /people  /timeline  /history <id>  /forget <id>
-           /forget-entity <name or id>  /recall <text>  /debug  /new  /help  /quit
+           /forget-entity <name or id>  /recall <text>  /consolidate  /ontology  /debug  /new  /help  /quit
 """
 import argparse
 import datetime as dt
@@ -10,6 +10,8 @@ from langchain_core.messages import HumanMessage
 from neo4j import GraphDatabase
 
 from config import COMPANION_NAME, COMPANION_USER, NEO4J_AUTH, NEO4J_URI
+from companion import ontology
+from companion.extract import find_pattern
 from companion.graph import build_companion, close_episode, greeting, seed_thread
 from companion.store import MemoryStore, format_context
 
@@ -24,9 +26,11 @@ def end_session(store: MemoryStore, episode_id: str, today: dt.date) -> None:
 
 def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None:
     if cmd in ("/memories", "/all"):
-        rows = store.memories(kind=arg or None, include_retired=cmd == "/all")
+        rows = store.memories(kind=arg or None, include_retired=cmd == "/all", today=today)
         for m in rows:
             flag = " (retired)" if m["retired"] else (f" [{m['status']}]" if m["status"] else "")
+            if m["valid_until"]:
+                flag += f" ({'expired' if m['expired'] else 'until'} {m['valid_until'].to_native():%m-%d %H:%M})"
             flag += (" 🔒" if m["sensitive"] else "") + (f" ↻{m['annual_date']}" if m["annual_date"] else "")
             print(f"  {m['id']}  [{m['kind']}] {m['text']}  ★{m['importance']}{flag}")
         print(f"  {len(rows)} memories")
@@ -46,6 +50,13 @@ def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None
         gone = store.forget_entity(arg)
         print(f"  forgot {gone['name']}: {gone['memories']} memories deleted, {gone['turns']} turns and "
               f"{gone['episodes']} summaries redacted" if gone else "  no such entity")
+    elif cmd == "/ontology":
+        print("\n".join("  " + line for line in ontology.tree()))
+        for t in store._q("MATCH (t:RelType {proposed: true}) RETURN t.name AS name, t.closest AS hint, t.examples AS ex"):
+            print(f"  proposed: {t['name']}  (closest: {t['hint']})  e.g. {t['ex'][-1]}")
+    elif cmd == "/consolidate":
+        for line in store.consolidate(today, writer=find_pattern) or ["nothing to do"]:
+            print(f"  {line}")
     elif cmd == "/recall":
         print(format_context(store.recall(arg, today=today), today))
 

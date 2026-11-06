@@ -30,7 +30,7 @@ class Extraction(BaseModel):
 with tool calling; the code falls back to "reply with JSON matching this schema" for endpoints
 without it. Extraction errors are caught so **memory problems never break the conversation**.
 
-Key prompt rules (see `EXTRACT_SYSTEM`): one standalone third-person sentence per memory,
+Key prompt rules (see `RULES` in [`companion/extract.py`](../companion/extract.py)): one standalone third-person sentence per memory,
 absolute dates, only what the user said, supersede instead of duplicating, list the protected
 person in a boundary's `about`.
 
@@ -100,6 +100,33 @@ knows today's date and the prompt forbids relative dates.
 
 > **Before that rule was added**, the first run stored "…presentation to leadership next
 > Thursday" — true for one week, then wrong. Prompt rules are part of the data model.
+
+## Test it — [`tests/test_09_write_path.py`](../tests/test_09_write_path.py)
+
+The LLM and the store meet at one typed object, `Extraction`. Hand-write the extraction a
+model *would* return, and every storage rule becomes an exact, free test:
+
+```python
+store.apply(Extraction(memories=[mem("Pytest lives in Austin")]), today=T)
+[old] = store.memories()
+store.apply(Extraction(memories=[mem("Pytest lives in Chicago", supersedes=[old["id"]])]), today=T)
+assert current(store) == {"Pytest lives in Chicago"}
+```
+
+The `store` fixture uses its own `pytest` user and wipes it before and after each test.
+
+A code review of the write path produced regression tests. Each one failed before its fix:
+- a correction that matched an existing memory was "reinforced" and **dropped its `supersedes`**;
+- forgetting "Ann" deleted *"planning an anniversary trip"* (substring match, now whole words);
+- short names ("Jo") and other entities' summaries ("Kai: Jo's brother") weren't redacted;
+- `/forget <id>` didn't stick: the end-of-episode pass re-read the transcript and stored the
+  same fact again. A tombstone (the embedding only, no text) now blocks it for that episode;
+- vector searches filtered by user *after* taking the top 5, so other users' memories could
+  crowd out the real duplicate. Now they take 50, filter, then keep the top k.
+
+`apply()` runs several small transactions, not one. If something fails halfway, the graph is
+left half-updated. That's acceptable for a tutorial, but production code would wrap each
+memory in `session.execute_write`.
 
 ## Inspect it in the Browser
 

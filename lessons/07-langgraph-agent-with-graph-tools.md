@@ -115,6 +115,26 @@ What to notice:
 - For a question no fixed tool covers, it **wrote correct Cypher**, including the `:Role` nodes
   from Lesson 3, using only the schema in the docstring.
 
+## Test it — [`tests/test_07_agent.py`](../tests/test_07_agent.py)
+
+Test an agent in two layers:
+
+1. **Tools are plain functions over the graph.** Call them directly, with no LLM:
+   - `find_experts` is case-insensitive and ranked;
+   - empty results explain themselves ("Nobody has the skill…"), so the model can recover;
+   - `run_cypher` refuses writes, reports syntax errors and caps rows at 25.
+
+   The cap streams only 25 rows (`result.fetch(25)`) under a 10-second timeout. The first
+   version fetched everything and sliced afterwards, so a runaway query could exhaust memory
+   before the cap applied.
+2. **The agent's choices need the LLM** (`pytest -m llm`). Grade the **trajectory**: which tool
+   it called for each question, plus a few words the answer must contain.
+
+   ```python
+   AGENT_CASES = [("Who knows Python best?", "find_experts", ["Alice"]),
+                  ("What does Eve work on?", "person_profile", ["Search Revamp"]), ...]
+   ```
+
 ## Takeaways
 
 - Start with **fixed, parameterized tools**; add free-form Cypher behind a read-only transaction.

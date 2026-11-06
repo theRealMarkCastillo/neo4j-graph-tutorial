@@ -1,7 +1,8 @@
 neo4j>=5.28
 fastembed>=0.4
-anthropic>=2.6
+openai>=3.46
 python-dotenv>=1.0
 langgraph>=1.2
 langchain-openai>=1.7
 langchain-core>=1.7
+pytest>=8

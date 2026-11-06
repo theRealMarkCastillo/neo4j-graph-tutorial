@@ -143,6 +143,21 @@ The `Go` skill survives — deleting Hal doesn't touch his neighbors.
 
 ---
 
+## Test it — [`tests/test_02_writing.py`](../tests/test_02_writing.py)
+
+Testing writes against a real database without leaving anything behind: run them in a
+transaction and **roll it back** (the `tx` fixture in [`tests/conftest.py`](../tests/conftest.py)).
+
+```python
+def test_merge_is_idempotent(tx):
+    tx.run("MERGE (:Skill {name:'Zig'}) MERGE (:Skill {name:'Zig'}) MERGE (:Skill {name:'Zig'})")
+    assert count(tx, "MATCH (s:Skill {name:'Zig'}) RETURN count(s)") == 1
+```
+
+Writing the tests turned up a surprise. In Neo4j 5, a plain `DELETE` on a node that still
+has relationships does **not** fail when the statement runs. It fails when the transaction
+*commits*. `test_delete_needs_detach_when_node_has_relationships` pins that down.
+
 ## Cheat sheet
 
 | Goal | Cypher |

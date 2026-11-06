@@ -92,3 +92,9 @@ d = GraphDatabase.driver(config.NEO4J_URI, auth=config.NEO4J_AUTH); ensure_schem
 ```cypher
 SHOW INDEXES YIELD name, type WHERE name IN ['memory_vec','entity_vec','episode_vec','memory_user_kind']
 ```
+
+## Test it — [`tests/test_08_memory_schema.py`](../tests/test_08_memory_schema.py)
+
+Schema setup must be idempotent, so the test runs `ensure_schema()` **twice** and then checks
+that every constraint and vector index is `ONLINE`. A second test proves the id constraint
+actually rejects a duplicate.

@@ -3,7 +3,9 @@
     (:User:Entity {id, name, kind:'self'})
     (:Entity {id, user, name, kind, aliases, summary, embedding})
         kind: person | pet | place | organization | activity | thing
-    (:User|Entity)-[:RELATED {type, since}]->(:Entity)          the social / life graph
+    (:User|Entity)-[:RELATED {type, said, since, until, updated_at}]->(:Entity)   life graph
+        type: canonical ontology type (Lesson 12); said: the word used; until: when it ended
+    (:Forgotten {user, episode, embedding})                     tombstone for /forget (Lesson 11)
     (:Memory {id, user, text, kind, importance, embedding,
               occurred_on, due_on, status,                     domain time (when it happened)
               created_at, invalidated_at, last_accessed, access_count})  system time

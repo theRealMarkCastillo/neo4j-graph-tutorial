@@ -188,6 +188,24 @@ As a picture, return `path = (m)-[:MANAGES]->(e)-[:WORKS_ON]->(pr)`: 6 nodes, 5 
 
 ---
 
+## Test it — [`tests/test_01_reading.py`](../tests/test_01_reading.py)
+
+Each test pins one query's answer on the seed graph:
+
+```python
+def test_exercise_who_works_on_mobile_app(driver):
+    team = names(driver, "MATCH (p:Person)-[:WORKS_ON]->(:Project {name:'Mobile App'}) RETURN p.name AS name")
+    assert {"Bob", "Cara"} <= team
+```
+
+Note the `<=` (subset): later lessons add people, so assert what *this* lesson established
+rather than exact totals that will change. Brittle tests that break for good reasons teach
+people to ignore failures.
+
+```bash
+.venv/bin/python -m pytest tests/test_01_reading.py -v
+```
+
 ## Takeaways
 
 - **Return nodes, relationships or paths** to get a picture; return values to get a table.

@@ -83,8 +83,9 @@ half of **GraphRAG**.
 1. Embed the question with the same local model.
 2. One Cypher query: top-3 nodes by meaning, then each one's relationships turned into
    plain-English facts.
-3. Send the facts to Claude as context (needs `ANTHROPIC_API_KEY` in `.env`; otherwise the
-   script prints the context and stops).
+3. Send the facts to the LLM as context with the plain OpenAI SDK (`config.llm_client()`,
+   any OpenAI-compatible endpoint set by `LLM_*` in `.env`; otherwise the script prints the
+   context and stops).
 
 ```bash
 .venv/bin/python graphrag.py "Who could help us build a recommendation engine?"
@@ -140,6 +141,30 @@ is level 4, Finn's is level 2**. (The generated-answer step was not run in the o
 session because no API key was set.)
 
 ---
+
+## Test it — [`tests/test_05_vectors_and_graphrag.py`](../tests/test_05_vectors_and_graphrag.py)
+
+**Retrieval is the part of RAG you can measure without an LLM.** Label a few questions with the
+node that *should* come back, and score hit@3:
+
+```
+hit@3 = 1.00
+HIT  'Who could help us build a recommendation engine?' -> ['Eve', 'Search Revamp', 'Finn']
+HIT  'Who knows Rust and low-latency systems?' -> ['Finn', 'Gia', 'Cara']
+...
+```
+
+Re-run it whenever you change the embedding model, the descriptions or `k`, and compare the
+number rather than your impression. `HIT_RATE_MIN` is the bar. Lower it only on purpose.
+
+The **LLM evals** (`pytest -m llm`) grade the generated answer with code:
+- the recommendation question must name Eve;
+- "Who speaks Japanese?" must name **nobody**.
+
+They come as a pair because of a real regression. Adding "say so instead of guessing" to the
+prompt made the model answer *"The provided context does not answer this question"* even
+though the context listed Eve's ranking models. One eval alone would have passed either
+prompt. The pair catches both failure modes.
 
 ## Cheat sheet
 

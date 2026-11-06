@@ -19,6 +19,12 @@ GitHub renders inline.
 | 12 | [Memory data model](#12-memory-data-model) | ER |
 | 13 | [Python classes](#13-python-classes) | class |
 | 14 | [Life of a memory](#14-life-of-a-memory) | state |
+| 15 | [Ontology — how a relation is stored](#15-ontology--how-a-relation-is-stored) | flowchart |
+| 16 | [Ontology — two layers in Neo4j](#16-ontology--two-layers-in-neo4j) | graph |
+| 17 | [Memory over time — a status's life](#17-memory-over-time--a-statuss-life) | state |
+| 18 | [Memory over time — the upkeep job](#18-memory-over-time--the-upkeep-job) | flowchart |
+
+Terms used here are defined in the [glossary](glossary.md).
 
 ---
 
@@ -311,7 +317,7 @@ memory ABOUT an entity that an active boundary memory is also ABOUT.
 flowchart LR
     Q["user message"] --> EMB["embed (fastembed)"]
 
-    EMB --> SEM["Semantic<br/>memory_vec top 50<br/>rank = 0.6·sim + 0.25·imp/10<br/>+ 0.15·recency decay<br/>(feelings τ=7d, others 90d)<br/><i>skips retired, done, protected;<br/>sensitive only if ≈ top match</i>"]
+    EMB --> SEM["Semantic<br/>memory_vec top 50<br/>rank = 0.6·sim + 0.4·strength<br/>(strength decays per kind, Lesson 13)<br/><i>skips expired, dormant, retired, done, protected;<br/>sensitive only if ≈ top match</i>"]
     Q --> CORE["Core profile<br/>all boundaries +<br/>top 8 facts/prefs ★6+<br/><i>not sensitive, not protected</i>"]
     Q --> HOP["Entity hop<br/>names/aliases in message<br/>+ entity_vec ≥ 0.85<br/>+ relation groups (family…)<br/><i>skips protected entities</i>"]
     EMB --> HOP
@@ -554,3 +560,102 @@ stateDiagram-v2
     Done --> [*]: hard delete
     Retired --> [*]: hard delete
 ```
+
+---
+
+## 15. Ontology — how a relation is stored
+
+[Lesson 12](../lessons/12-ontology.md). Every relation the extractor returns goes through
+`companion/ontology.py` before it touches the graph.
+
+```mermaid
+flowchart TD
+    IN["RelationOut<br/>source · target · type · ended"] --> NORM{"normalize(type)"}
+    NORM -- "canonical name" --> C["exact"]
+    NORM -- "synonym<br/>girlfriend → partner" --> C
+    NORM -- "X_of form<br/>daughter_of" --> FLIP["flip source/target<br/>Ana -daughter_of-> Leo<br/>⇒ Leo -daughter-> Ana"] --> C
+    NORM -- "unknown<br/>neighbor" --> NEW["keep as-is +<br/>propose RelType for review<br/>(closest-match hint only)"] --> C
+    C --> END{"ended?"}
+    END -- yes --> LIN["end active edges whose type is<br/>in the lineage (sub/supertypes)<br/>boyfriend ended → partner ends"]
+    END -- no --> RANGE{"target kind<br/>in range?"}
+    RANGE -- no --> REJ["reject + log<br/>pet → Maya (a person)"]
+    RANGE -- yes --> CARD{"cardinality one?"}
+    CARD -- yes --> MOVE["end other active edges<br/>of that type<br/>lives_in Austin ends"]
+    CARD -- no --> LINK
+    MOVE --> LINK["MERGE RELATED {type: canonical,<br/>said: original words}"]
+
+    LINK --> INF["at recall time: infer_kin()<br/>brother ∘ daughter = niece_or_nephew"]
+```
+
+---
+
+## 16. Ontology — two layers in Neo4j
+
+The **TBox** (types and rules) and the **ABox** (facts) live in the same database. Each
+`RELATED` edge's `type` property names a `:RelType`. Recall asks the TBox which types count
+as "family" (`-[:SUBTYPE_OF*]->(:RelType {name:'family'})`), then reads the ABox; inference
+composes brother ∘ daughter into the dotted niece edge, which is never stored.
+
+```mermaid
+flowchart LR
+    subgraph tbox["Ontology (TBox) — :RelType"]
+        related(["related"])
+        family(["family"]) --> related
+        romantic(["romantic"]) --> related
+        sibling(["sibling<br/>symmetric"]) --> family
+        child(["child<br/>inverse = parent"]) --> family
+        brother(["brother"]) --> sibling
+        daughter(["daughter"]) --> child
+        partner(["partner<br/>one at a time"]) --> romantic
+        spouse(["spouse"]) --> partner
+        spouse --> family
+        nn(["niece_or_nephew"]) --> family
+    end
+
+    subgraph abox["Facts (ABox) — :Entity and RELATED"]
+        U["User: Riley"] -- "RELATED {type: brother}" --> L["Leo"]
+        L -- "RELATED {type: daughter}" --> A["Ana"]
+        U -. "inferred: niece_or_nephew" .-> A
+    end
+```
+
+---
+
+## 17. Memory over time — a status's life
+
+[Lesson 13](../lessons/13-memory-over-time.md). Three clocks: validity (`valid_until`),
+decay (strength vs. age) and consolidation (the upkeep job).
+
+```mermaid
+stateDiagram-v2
+    [*] --> Current: "Off to the gym!"<br/>[status] valid_until = now + ~2h
+    Current --> Recent: valid_until passes
+    Recent: Recent — expired < 24h ago<br/>shown as "Recently, no longer true"<br/>(the greeting can ask how it went)
+    Recent --> Dormant: a day later<br/>strength below 0.05
+    Dormant: Dormant — stored, never recalled
+    Current --> Current: said again while valid<br/>→ reinforced, valid_until extended
+    Dormant --> RolledUp: 3+ similar (complete linkage ≥ 0.82)<br/>→ find_pattern() writes a habit
+    RolledUp: Rolled up — consolidated_at set<br/>(pattern)-[:SUMMARIZES]->(this)
+    RolledUp --> [*]: pruned (importance ≤ 3)
+    Dormant --> [*]: pruned after 60 days<br/>if never rolled up
+```
+
+---
+
+## 18. Memory over time — the upkeep job
+
+```mermaid
+flowchart TD
+    start(["close_episode() or /consolidate"]) --> lapse["1 · lapse: open plans<br/>> 14 days past due → status 'lapsed'"]
+    lapse --> fetch["2 · fetch events / statuses / feelings<br/>from the last 60 days, not yet consolidated"]
+    fetch --> cluster["complete-linkage clusters<br/>(every pair ≥ 0.82), size ≥ 3"]
+    cluster --> writer{"find_pattern()<br/>LLM: a habit?"}
+    writer -- no --> next["skip cluster"]
+    writer -- yes --> apply["apply(pattern)<br/>new memory, or reinforced if known"]
+    apply --> link["SUMMARIZES edges, consolidated_at,<br/>pattern.evidence += n"]
+    link --> prune
+    next --> prune
+    prune["3 · prune: dormant statuses/feelings, importance ≤ 3,<br/>rolled up or older than 60 days → DETACH DELETE"]
+    prune --> done([log lines])
+```
+

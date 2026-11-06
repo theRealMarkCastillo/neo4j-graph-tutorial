@@ -1,0 +1,385 @@
+
+=== cross_turn_facts: A fact split over two turns ('she' in turn 2) + a small-talk turn skipped
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: My best friend from college, Priya, called me today.
+  Sage: That's lovely! It's always a great feeling when an old friend reaches out. How is Priya doing?
+     ✎ linked user -best_friend-> Priya
+     ✎ + [event] Riley's best friend from college, Priya, called Riley on 2026-11-02.
+  Riley: She just got engaged! The wedding is on June 12 next year.
+  Sage: That's amazing news! Congratulations to her! June 12th sounds like a beautiful time for a wedding. Are you already thinking about your outfit, or just soaking in the excitement for now?
+     ✎ + [event] Riley's best friend Priya got engaged on 2026-11-02.
+     ✎ + [plan] Priya's wedding is on 2027-06-12.
+  Riley: haha yeah
+  Sage: I bet! It's such a whirlwind of excitement when the news first hits. I'm sure she's over the moon!
+     (small talk — extraction skipped)
+     ✎ episode saved: Riley shared that their college best friend, Priya, got engaged. The wedding is scheduled for 2027-06-12. Riley is already starting to think about what to wear for the occasion. (mood: Excited and happy)
+  PASS  Priya exists as a person
+  PASS  a memory about Priya says she got engaged
+  PASS  the wedding is dated 2027-06-12
+  PASS  'haha yeah' skipped the extraction call
+
+=== correction: A plan's date is corrected in the same conversation
+  -- session 1 (2026-11-09)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: I have a dentist appointment on Thursday.
+  Sage: Got it. Hopefully it's just a quick cleaning and nothing too tedious! Do you have it at a time that works well with your schedule, or is it one of those "take a long lunch" kind of appointments?
+     ✎ + [plan] Riley has a dentist appointment on 2026-11-12
+  Riley: Oh wait, I just checked — it's actually on Tuesday the 17th.
+  Sage: No worries! Thanks for the heads-up. I've got that noted for Tuesday the 17th instead. That gives you a bit more time to prepare for it!
+     ✎ + [plan] Riley has a dentist appointment on 2026-11-17  (replaces m_886004)
+     ✎ (episode pass) reinforced m_6bd866
+     ✎ episode saved: Riley informed Sage about an upcoming dentist appointment. Although initially mentioned for a Thursday, Riley corrected the date to 2026-11-17. Sage noted the updated date in their records. (mood: Informative and organized)
+  PASS  exactly one open dentist plan
+  PASS  it is due 2026-11-17
+
+=== history: A fact changes; later the user asks about the past
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: I live in Austin, I've been here about five years.
+  Sage: Austin is a great city. Five years is a good amount of time—long enough to find all the best hidden spots but still remember what it was like when you first moved in. Do you feel like a local now, or are there still parts of the city you're exploring?
+     ✎ linked user -lives_in-> Austin
+     ✎ + [fact] Riley lives in Austin.
+     ✎ + [event] Riley moved to Austin about five years before November 2026.
+     ✎ episode saved: Riley shared that they have lived in Austin for approximately five years. The conversation focused on their experience living in the city and their transition into feeling like a local. No pending items were left open. (mood: Conversational and open)
+  -- session 2 (2026-11-20)
+  Sage: Hi Riley! It's good to see you. How has your Friday been going so far?
+  Riley: Big news: I moved to Chicago last week!
+  Sage: Wow, that's a huge change! Congratulations on the move. How are you settling into Chicago so far?
+     ✎ ended user -lives_in-> Austin
+     ✎ linked user -lives_in-> Chicago
+     ✎ + [event] Riley moved to Chicago in the week before 2026-11-20
+     ✎ + [fact] Riley lives in Chicago  (replaces m_d56411)
+     ✎ episode saved: Riley shared that they moved to Chicago in the week before 2026-11-20. The conversation focused on this major life change and how Riley is settling into the new city. (mood: Excited and positive)
+  -- session 3 (2026-11-25)
+  Sage: Hi Riley! How's everything going with the move to Chicago? I hope you're settling in well!
+  Riley: Remind me, where did I live before Chicago?
+  Sage: You lived in Austin for about five years before making the move to Chicago!
+     ✎ episode saved: Riley asked for a reminder about their previous place of residence. Sage confirmed that Riley lived in Austin for approximately five years before moving to Chicago. No other topics were discussed. (mood: Inquisitive)
+  PASS  current memory: lives in Chicago
+  PASS  the Austin memory is retired, not deleted
+  PASS  no current fact says they live in Austin now
+  PASS  asking about the past stored nothing new (no echo)
+  PASS  the reply answers 'Austin'
+
+=== relationship_change: Partner becomes an ex and a boundary; nothing about them resurfaces
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: My girlfriend Dana and I are planning a trip to Lisbon in March.
+  Sage: Lisbon in March sounds lovely! The weather should be starting to warm up, and it's a great time to avoid the heaviest summer crowds. 
+
+Do you two already have a list of things you want to see, or are you still in the early brainstorming phase?
+     ✎ linked user -partner-> Dana
+     ✎ + [plan] Riley and Dana are planning a trip to Lisbon in March 2027.
+     ✎ episode saved: Riley shared that they and their girlfriend, Dana, are planning a trip to Lisbon in March 2027. The conversation focused on the early stages of brainstorming for the visit. They have not yet detailed a specific itinerary. (mood: Excited and planning)
+  -- session 2 (2026-11-16)
+  Sage: Hi Riley! It's good to see you. How has your Monday been starting out?
+  Riley: Dana and I broke up last weekend.
+  Sage: I'm so sorry to hear that, Riley. That sounds incredibly difficult. I'm here if you want to talk about it or if you just need a distraction.
+     ✎ ended user -partner-> Dana
+     ✎ linked user -ex-> Dana
+     ✎ + [event] Riley and Dana broke up on 2026-11-15.
+  Riley: Please don't bring her up anymore, it hurts.
+  Sage: Got it. I won't bring it up.
+     ✎ plan done m_fc7bb5
+     ✎ + [boundary] Riley doesn't want to talk about Dana
+     ✎ (episode pass) reinforced m_524df1
+     ✎ episode saved: Riley shared that they went through a breakup in the week before 2026-11-16. Riley explicitly asked that the topic not be discussed further. A boundary was set regarding this subject. (mood: Distressed and hurting)
+  -- session 3 (2026-11-30)
+  Sage: Hi Riley! It's good to see you. How is your Monday going so far?
+  Riley: What should I do this weekend? Any trip ideas?
+  Sage: Since it's a Monday, you've got plenty of time to plan! Depending on the vibe you're going for, you could keep it local with a cozy "staycation" weekend—maybe checking out a new museum or a hiking trail—or do a quick getaway to a nearby city.
+
+As for trip ideas, are you looking for something short and sweet for this coming weekend, or are you thinking bigger for the future?
+     ✎ episode saved: On 2026-11-30, Riley asked for suggestions for activities and trip ideas for the upcoming weekend. Sage provided a few options, including local staycation ideas like museums or hiking, as well as the possibility of a city getaway. The conversation left open whether Riley is looking for a short trip for the immediate weekend or planning something larger for the future. (mood: curious and planning)
+  PASS  no active romantic relation to Dana
+  PASS  a boundary memory is ABOUT Dana
+  PASS  Dana is not in the people list
+  PASS  session 3 never mentions Dana or Lisbon
+
+=== same_name: Two different people named Sam stay separate
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: My coworker Sam keeps taking credit for my work. So annoying.
+  Sage: That is incredibly frustrating. There's nothing quite like the feeling of putting in all the hard work only for someone else to swoop in and take the win. 
+
+Have you tried mentioning it to them, or are you more at the "documenting everything and waiting for the right moment" stage?
+     ✎ linked user -coworker-> Sam
+     ✎ + [feeling] Riley is annoyed that their coworker Sam keeps taking credit for Riley's work. (until 2026-11-02 23:59)
+     ✎ episode saved: Riley expressed frustration regarding a coworker named Sam who has been taking credit for Riley's work. Sage offered validation and asked if Riley had addressed the issue directly or was documenting the occurrences. The conversation ended before Riley shared their current strategy. (mood: Frustrated)
+  -- session 2 (2026-11-09)
+  Sage: Hi Riley! I've been thinking about you—did you ever get a chance to figure out a strategy for dealing with Sam?
+  Riley: My cousin Sam is getting married in May!
+  Sage: That's wonderful news! May is such a lovely time for a wedding. Do you know where they're planning to have it yet?
+     ✎ new entity Sam (e_a4ba19), distinct from the known Sam
+     ✎ linked user -cousin-> Sam
+     ✎ + [plan] Riley's cousin Sam is getting married in May 2027
+     ✎ episode saved: Riley shared the news that their cousin Sam is getting married in May. Sage congratulated Riley and asked about the location of the wedding. The conversation ended before the location was revealed. (mood: Excited)
+  -- session 3 (2026-11-16)
+  Sage: Hi Riley! It's good to see you. I was thinking about your cousin Sam's wedding—did you ever find out where it's going to be?
+  Riley: Sam from work did it again today, took credit for my slides in the team meeting.
+  Sage: That is so frustrating. I'm sorry you're dealing with that again—it's incredibly draining when your hard work is just handed off to someone else like that. 
+
+Did you get a chance to speak up during the meeting, or are you still keeping a record of these instances?
+     ✎ + [event] Riley's coworker Sam took credit for Riley's slides during a team meeting on 2026-11-16.
+     ✎ episode saved: Riley shared that a colleague named Sam took credit for their work during a team meeting on 2026-11-16. The conversation focused on the frustration of this recurring issue. It remains to be seen if Riley spoke up during the meeting or is continuing to document these occurrences. (mood: Frustrated and drained)
+  PASS  two Sam entities
+  PASS  the wedding is about cousin Sam
+  PASS  the slides incident is about coworker Sam
+  PASS  no credit/slides memory is about cousin Sam
+
+=== recurring_date: A birthday comes up every year
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: My mom's birthday is December 2nd. I always forget to plan something.
+  Sage: Since it's only early November, you've actually got a head start this year! Do you usually go for a big celebration, or something more low-key?
+     ✎ linked user -mother-> Mom
+     ✎ + [fact] Riley's mother's birthday is December 2nd. (yearly 12-02)
+     ✎ episode saved: On 2026-11-02, Riley mentioned that their mother's birthday is on 2026-12-02 and expressed a tendency to forget planning for it. The AI noted that Riley has a head start this year. They began discussing whether to plan a big celebration or a low-key event. (mood: Proactive but slightly anxious)
+  -- session 2 (2026-11-28)
+  Sage: Hi Riley! It's good to see you. Your mom's birthday is coming up on the 2nd—have you decided if you're going for a big celebration or keeping it low-key this year?
+  Riley: Hey!
+  Sage: Hey Riley! How's your Saturday going so far?
+     (small talk — extraction skipped)
+     ✎ episode saved: Riley greeted Sage on 2026-11-28. The conversation was just beginning as Sage asked how Riley's Saturday was going. No specific topics were discussed. (mood: Cheerful)
+  PASS  stored with annual_date 12-02
+  PASS  the 2026-11-28 greeting mentions the birthday
+  PASS  recall on 2027-11-25 lists it for 2027-12-02
+
+=== forget_person: 'Forget everything about Jordan' removes them everywhere
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: I just adopted a cat named Miso!
+  Sage: That's wonderful news! Miso is such a cute name. What does Miso look like?
+     ✎ linked user -pet-> Miso
+     ✎ + [event] Riley adopted a cat named Miso on 2026-11-02
+  Riley: Also my ex Jordan texted me again last night.
+  Sage: Oh, I'm sorry to hear that. How are you feeling about it?
+     ✎ linked user -ex-> Jordan
+     ✎ + [event] Riley's ex Jordan texted Riley on 2026-11-01.
+  Riley: Actually, please forget everything about Jordan. I don't want you remembering him at all.
+  Sage: Got it. I won't bring him up.
+     ✎ forgot Jordan: 1 memories deleted, 2 turns and 0 summaries redacted
+     ✎ episode saved: On 2026-11-02, Riley shared the exciting news of adopting a new cat named Miso. The conversation focused on the new pet. (mood: Excited but briefly unsettled)
+  -- session 2 (2026-11-09)
+  Sage: Hi Riley! It's good to see you. How are things going with Miso?
+  Riley: Who are the people and pets I've told you about?
+  Sage: You've told me about Miso, your adopted cat!
+     ✎ episode saved: On 2026-11-09, Riley asked for a reminder of the people and pets they had previously mentioned. Sage reminded Riley about their adopted cat, Miso. No other individuals or pets were discussed during this interaction. (mood: Curious and nostalgic)
+  PASS  no Jordan entity
+  PASS  no memory text mentions Jordan
+  PASS  no stored turn mentions Jordan
+  PASS  no episode summary mentions Jordan
+  PASS  Miso is still remembered
+  PASS  session 2 doesn't mention Jordan
+
+=== family_multi_hop: 'Anyone in my family...' finds relatives through relation types
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: My brother Leo is a paramedic in Seattle.
+  Sage: That's a demanding but incredibly important job. I imagine it's quite intense working as a paramedic in a city like Seattle—does he enjoy the fast pace of it?
+     ✎ linked user -brother-> Leo
+     ✎ + [fact] Riley's brother Leo is a paramedic in Seattle
+  Riley: And my aunt Rosa has been a pharmacist for twenty years.
+  Sage: Wow, a pharmacist for twenty years! It sounds like medicine runs in the family. Does she enjoy her work, or is she starting to look forward to retirement?
+     ✎ linked user -aunt-> Rosa
+     ✎ + [fact] Riley's aunt Rosa has been a pharmacist for twenty years
+     ✎ episode saved: Riley shared some information about their family members' careers. They mentioned that their brother, Leo, works as a paramedic in Seattle and their aunt, Rosa, has been a pharmacist for twenty years. No open questions remained from the conversation. (mood: Informative and conversational)
+  -- session 2 (2026-11-09)
+  Sage: Hi Riley! It's good to see you. How is your Monday going so far?
+  Riley: Is anyone in my family in healthcare? I have a question about mixing two medications.
+  Sage: Yes, both Leo and Aunt Rosa are in the medical field. 
+
+Since this is about mixing medications, it would be a good idea to check with a doctor or a licensed pharmacist to be safe. Do you want to try reaching out to Rosa?
+     ✎ + [feeling] Riley is concerned about mixing two medications (sensitive) (until 2026-11-09 23:59)
+     ✎ episode saved: On 2026-11-09, Riley asked about family members working in healthcare to inquire about mixing two medications. Sage identified Leo and Aunt Rosa as medical professionals but advised Riley to consult a licensed doctor or pharmacist for safety. Sage suggested that Riley reach out to Aunt Rosa for further guidance. (mood: Inquisitive and cautious)
+  PASS  Rosa is linked as a relative
+  PASS  recall surfaces Rosa and Leo
+  PASS  the reply suggests Rosa
+
+=== sensitive: A diagnosis is stored as sensitive and only comes up when on-topic
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: I was diagnosed with ADHD last year and I take medication for it.
+  Sage: Thank you for sharing that with me, Riley. I appreciate you letting me know. How has everything been going for you since the diagnosis?
+     ✎ + [fact] Riley was diagnosed with ADHD in 2025 and takes medication for it. (sensitive)
+  Riley: On a lighter note, I love hiking — Forest Park is my favorite.
+  Sage: Forest Park is beautiful! There's something so grounding about getting lost in the trees for a while. Do you have a favorite trail there, or do you prefer just wandering and seeing where you end up?
+     ✎ linked user -likes-> Forest Park
+     ✎ + [preference] Riley loves hiking and Forest Park is their favorite place to do so.
+     ✎ episode saved: On 2026-11-02, Riley shared a personal topic and discussed their love for hiking. They mentioned that Forest Park is their favorite location for this activity. The conversation ended with a discussion about their preferences for exploring trails. (mood: Open and positive)
+  -- session 2 (2026-11-09)
+  Sage: Hi Riley! It's good to see you. Have you had a chance to get out on any trails lately?
+  Riley: What should I do this weekend?
+  Sage: Since it's Monday, you've got plenty of time to plan! If you're looking to get outdoors, maybe a trip to Forest Park would be nice? It's always a great way to reset before the new week starts. 
+
+Do you feel like doing something active like that, or are you leaning more toward a relaxing weekend?
+     ✎ episode saved: On 2026-11-09, Riley asked for suggestions for the upcoming weekend. Sage suggested a trip to Forest Park for some outdoor activity. The conversation left open whether Riley prefers an active or relaxing weekend. (mood: Indecisive but open)
+  PASS  the ADHD memory is marked sensitive
+  PASS  it's not in the core profile
+  PASS  session 2 greeting/reply don't mention it
+  PASS  recall includes it when on-topic
+
+=== ontology_synonyms: 'boyfriend' is stored as the canonical partner; the breakup ends it; the pet stays
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: My boyfriend Theo and I just adopted a puppy named Waffles!
+  Sage: Oh, congratulations! Waffles is such a cute name for a puppy. I bet Theo and you are absolutely smitten. 
+
+What breed is Waffles? Or is he a little bit of everything?
+     ✎ linked user -partner-> Theo
+     ✎ linked user -pet-> Waffles
+     ✎ linked Theo -pet-> Waffles
+     ✎ + [event] Riley and Theo adopted a puppy named Waffles on 2026-11-02
+     ✎ episode saved: Riley shared the news that they and their boyfriend, Theo, adopted a puppy named Waffles. The conversation focused on the excitement of the new addition to their home. The breed of the puppy remains to be discussed. (mood: Excited and happy)
+  -- session 2 (2026-11-16)
+  Sage: Hi Riley! It's good to see you. How are things going with little Waffles?
+  Riley: Theo and I broke up last week. I'm keeping Waffles though.
+  Sage: I'm so sorry to hear that, Riley. That's a lot to go through in such a short time. I'm glad you still have Waffles with you—I'm sure the puppy's company is a comfort right now. How are you holding up?
+     ✎ ended user -partner-> Theo
+     ✎ linked user -ex-> Theo
+     ✎ + [event] Riley and Theo broke up in the week before 2026-11-16
+     ✎ episode saved: Riley shared that they broke up with Theo in the week before 2026-11-16. Riley mentioned that they are keeping their puppy, Waffles. The conversation focused on Riley's emotional well-being following the split. (mood: Sad and grieving)
+  PASS  no non-canonical type stored (boyfriend)
+  PASS  the partner edge to Theo is ended
+  PASS  Waffles is still an active pet
+
+=== ontology_cardinality: Moving ends the old lives_in even if nobody says 'I left Boston'
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: I live in Boston, in a tiny apartment near the river.
+  Sage: That sounds lovely. There's something so peaceful about being near the water, even if the space inside is a bit tight. Do you get a good view of the river from your place?
+     ✎ linked user -lives_in-> Boston
+     ✎ + [fact] Riley lives in a tiny apartment near the river in Boston.
+     ✎ episode saved: Riley shared that they live in a small apartment near the river in Boston. Sage commented on the peacefulness of living near the water. The conversation focused on Riley's living situation. (mood: Peaceful and conversational)
+  -- session 2 (2026-11-20)
+  Sage: Hi Riley! It's good to see you. How has your Friday been going so far?
+  Riley: Settling into my new place in Seattle — the move went smoothly!
+  Sage: That's wonderful news! I'm so glad to hear the move went smoothly. How are you feeling now that you're finally there? Is the new place starting to feel like home yet?
+     ✎ ended user -lives_in-> Boston
+     ✎ linked user -lives_in-> Seattle
+     ✎ + [event] Riley moved to Seattle on 2026-11-20.
+     ✎ + [fact] Riley lives in Seattle.  (replaces m_ef3fe7)
+     ✎ episode saved: On 2026-11-20, Riley shared that they have successfully moved into a new home in Seattle. Riley noted that the moving process went smoothly. The conversation ended with Sage asking how Riley is feeling and if the new place feels like home yet. (mood: Happy and settled)
+  PASS  exactly one active lives_in
+  PASS  and it is Seattle
+  PASS  Boston is kept as history
+
+=== ontology_inference: A brother's daughter is inferred to be a niece — nobody said 'niece'
+  -- session 1 (2026-11-02)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: My brother Leo just had a baby girl! Her name is Ana.
+  Sage: That's wonderful news! Congratulations to Leo and the whole family. Ana is such a beautiful name. How are the new parents doing?
+     ✎ linked user -brother-> Leo
+     ✎ linked Leo -child-> Ana
+     ✎ linked user -niece-> Ana
+     ✎ + [event] Riley's brother Leo had a baby girl named Ana on 2026-11-02
+     ✎ episode saved: Riley shared the happy news that their brother, Leo, has had a baby girl named Ana. The conversation focused on celebrating the new addition to the family. (mood: Joyful and excited)
+  -- session 2 (2026-11-09)
+  Sage: Hi Riley! It's good to see you. How are things going with Leo and little Ana?
+  Riley: Who's the newest member of my family?
+  Sage: That would be little Ana! It's still so exciting that Leo has a daughter now.
+     ✎ episode saved: Riley and Sage discussed the newest addition to Riley's family. They talked about Leo's daughter, Ana. No open items were left from the conversation. (mood: Happy and excited)
+  PASS  Leo is linked as a brother
+  PASS  Leo -daughter/child-> Ana is stored
+  PASS  Ana is the user's niece — stored, or inferred via Leo
+  PASS  the reply names Ana
+
+=== situational: Short-lived statuses expire, get a follow-up, and roll up into a habit
+  -- session 1 (2026-11-18)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: Heading to the gym, talk later!
+  Sage: Sounds good! Have a great workout—talk to you when you're back.
+     ✎ + [status] Riley is heading to the gym (until 2026-11-18 14:00)
+     ✎ episode saved: On 2026-11-18, Riley informed Sage that they were heading to the gym. The conversation was brief, with Riley planning to reconnect after their workout. (mood: Energetic and positive)
+  -- session 2 (2026-11-19)
+  Sage: Hi Riley! It's good to see you. How did your gym session go yesterday?
+  Riley: Morning! I slept terribly though.
+  Sage: Morning! I'm sorry to hear that. There's nothing quite as draining as a rough night's sleep. 
+
+Do you think it was just one of those nights, or is there something on your mind?
+     ✎ + [feeling] Riley slept terribly on 2026-11-18 (sensitive) (until 2026-11-19 23:59)
+     ✎ episode saved: On 2026-11-19, Riley shared that they had slept poorly. Sage offered support and asked if the lack of sleep was due to a random occurrence or if something was weighing on Riley's mind. (mood: Tired and drained)
+  -- session 3 (2026-11-20)
+  Sage: Hi Riley! It's good to see you. How's your Friday going so far?
+  Riley: Just got back from the gym, my legs are dead.
+  Sage: Ouch, sounds like you really put in the work! Hopefully you can kick back and relax for a bit now. Do you have a favorite way to recover, or are you just heading straight for the couch?
+     ✎ + [feeling] Riley's legs feel exhausted after a workout on 2026-11-20. (until 2026-11-20 23:59)
+     ✎ episode saved: Riley shared that they had just returned from the gym and were feeling physically exhausted. The conversation focused on their workout and the need for recovery. No open items were left unresolved. (mood: Tired but accomplished)
+  -- session 4 (2026-11-23)
+  Sage: Hi Riley! It's good to see you. How are you feeling today?
+  Riley: Gym again before work today, trying to keep the streak going.
+  Sage: You're on a roll! I love the dedication. Hopefully you're feeling a bit more rested today than you were last week. 
+
+Have a great workout—I'll be here whenever you're ready to dive into the workday!
+     ✎ + [status] Riley is at the gym before work. (until 2026-11-23 14:00)
+     ✎ episode saved: On 2026-11-23, Riley shared that they went to the gym before work to maintain their current streak. The conversation focused on Riley's commitment to their fitness routine. No open items were left for follow-up. (mood: Motivated and dedicated)
+  PASS  the gym was stored as a status that expires
+  PASS  the next day nothing says they're at the gym now
+  PASS  the next day's greeting asks about the gym
+  FAIL  three gym visits became one lasting habit
+
+=== Summary
+  cross_turn_facts       4/4
+  correction             2/2
+  history                5/5
+  relationship_change    4/4
+  same_name              4/4
+  recurring_date         3/3
+  forget_person          6/6
+  family_multi_hop       3/3
+  sensitive              4/4
+  ontology_synonyms      3/3
+  ontology_cardinality   3/3
+  ontology_inference     4/4
+  situational            3/4
+  total                  48/49
+
+
+=== Rerun of "situational" after adding a clearer third gym visit (2026-11-21)
+
+=== situational: Short-lived statuses expire, get a follow-up, and roll up into a habit
+  -- session 1 (2026-11-18)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: Heading to the gym, talk later!
+  Sage: Have a great workout! Talk to you when you're back.
+     ✎ + [status] Riley is heading to the gym (until 2026-11-18 14:00)
+     ✎ episode saved: On 2026-11-18, Riley informed Sage that they were heading to the gym. Sage wished them a great workout. No other topics were discussed. (mood: Energetic and positive)
+  -- session 2 (2026-11-19)
+  Sage: Hi Riley! It's good to see you. How did your gym session go yesterday?
+  Riley: Morning! I slept terribly though.
+  Sage: Morning! I'm sorry to hear that. There's nothing quite as draining as a rough night's sleep. 
+
+Are you feeling a bit foggy, or just exhausted? Hopefully you can find some time to take it easy today.
+     ✎ + [feeling] Riley slept terribly on the night of 2026-11-18 (sensitive) (until 2026-11-19 23:59)
+     ✎ episode saved: On 2026-11-19, Riley shared that they had slept poorly. Sage offered support and empathy regarding their fatigue. The conversation focused on Riley's current state of exhaustion. (mood: Exhausted)
+  -- session 3 (2026-11-20)
+  Sage: Hi Riley! It's Friday—how is your day treating you so far?
+  Riley: Just got back from the gym, my legs are dead.
+  Sage: Welcome back! Sounds like you really put in the work today. Time to kick your feet up and recover!
+     ✎ + [feeling] Riley's legs feel exhausted after a workout on 2026-11-20 (until 2026-11-20 23:59)
+     ✎ episode saved: Riley informed Sage that they had just returned from the gym and were feeling physically exhausted. Sage encouraged Riley to rest and recover from their workout. No further actions or topics were left open. (mood: Tired but accomplished)
+  -- session 4 (2026-11-21)
+  Sage: Hi Riley! How are you feeling today? I was wondering if your legs have recovered from that gym session yesterday.
+  Riley: Off to the gym again after work, then dinner.
+  Sage: Sounds like a productive Saturday! Hopefully your legs are feeling a bit more refreshed today after that last session. 
+
+Do you have something delicious planned for dinner, or are you deciding later?
+     ✎ + [status] Riley is going to the gym after work and then having dinner. (until 2026-11-21 22:00)
+     ✎ episode saved: On 2026-11-21, Riley shared their plans to go to the gym after work and then have dinner. The conversation touched upon Riley's physical recovery from a previous workout session. No specific dinner plans were decided during the exchange. (mood: Productive and active)
+  -- session 5 (2026-11-23)
+  Sage: Hi Riley! How's your Monday going so far? I was thinking about your gym sessions from last week—hope you're feeling well-rested and recovered now!
+  Riley: Gym again before work today, trying to keep the streak going.
+  Sage: You're on a roll! I'm impressed you're sticking with the streak, especially after how exhausted you were feeling last week. Hope it gives you a good energy boost for the workday!
+     ✎ + [status] Riley is at the gym before work. (until 2026-11-23 15:00)
+     ✎ episode saved: On 2026-11-23, Riley shared that they went to the gym before work to maintain their current streak. The conversation touched upon Riley's efforts to stay consistent despite feeling exhausted in the week before 2026-11-23. (mood: Motivated and disciplined)
+     ✎ (upkeep) pattern from 3 memories: + [fact] Riley goes to the gym regularly.
+     ✎ (upkeep) pruned 1 dormant status/feeling memories
+  PASS  the gym was stored as a status that expires
+  PASS  the next day nothing says they're at the gym now
+  PASS  the next day's greeting asks about the gym
+  PASS  three gym visits became one lasting habit
+
+=== Summary
+  situational            4/4
+  total                  4/4

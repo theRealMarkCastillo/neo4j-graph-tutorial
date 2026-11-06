@@ -16,7 +16,7 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, unit_of_work
 
 from config import EMBED_MODEL, NEO4J_AUTH, NEO4J_URI, chat_model
 
@@ -24,17 +24,26 @@ driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
 _embedder = None
 
 
-def read(query: str, **params) -> list[dict]:
-    """Run Cypher in a READ transaction: the server rejects any write inside it."""
+def read(query: str, limit: int | None = None, **params) -> list[dict]:
+    """Run Cypher in a READ transaction: the server rejects any write inside it.
+
+    `limit` streams at most that many rows (the rest is never fetched), and the 10 s
+    timeout stops runaway queries such as an accidental cartesian product."""
+    @unit_of_work(timeout=10)
+    def work(tx):
+        result = tx.run(query, **params)
+        return [r.data() for r in (result.fetch(limit) if limit else result)]
+
     with driver.session(database="neo4j") as session:
-        return session.execute_read(lambda tx: tx.run(query, **params).data())
+        return session.execute_read(work)
 
 
 # --- Fixed, parameterized tools: predictable and safe (prefer these) -----------------
 
 @tool
 def find_experts(skill: str) -> str:
-    """List people who have a skill, strongest first, with their current projects."""
+    """List people who have a skill, strongest first, with their current projects.
+    skill: a skill name as stored, e.g. Python, TypeScript, ML, UX, Rust (case-insensitive)."""
     rows = read(
         """
         MATCH (p:Person)-[h:HAS_SKILL]->(s:Skill) WHERE toLower(s.name) = toLower($skill)
@@ -49,7 +58,8 @@ def find_experts(skill: str) -> str:
 
 @tool
 def person_profile(name: str) -> str:
-    """Everything directly connected to one person: role, skills, projects, manager, contacts."""
+    """Everything directly connected to one person: role, skills, projects, manager, contacts.
+    name: the person's first name as stored, e.g. "Eve"."""
     rows = read(
         """
         MATCH (p:Person {name: $name})
@@ -102,12 +112,14 @@ def semantic_search(text: str) -> str:
 @tool
 def run_cypher(query: str) -> str:
     """Run a READ-ONLY Cypher query for questions the other tools can't answer.
+    At most 25 rows come back: use count() / aggregation for totals.
     Schema: (:Person {name, role, description})-[:HAS_SKILL {level}]->(:Skill {name}),
     (:Person)-[:WORKS_ON]->(:Project {name, status, description}),
     (:Project)-[:REQUIRES]->(:Skill), (:Person)-[:MANAGES]->(:Person),
-    (:Person)-[:KNOWS {since}]->(:Person), (:Person)-[:HAS_ROLE]->(:Role {name})."""
+    (:Person)-[:KNOWS {since}]->(:Person), (:Person)-[:HAS_ROLE]->(:Role {name}).
+    Person.role and HAS_ROLE hold the same job title (Lesson 3 copied one into the other)."""
     try:
-        return json.dumps(read(query)[:25], default=str)
+        return json.dumps(read(query, limit=25), default=str)
     except Exception as e:  # syntax errors and attempted writes come back to the model
         return f"Query failed: {e}"
 
@@ -153,11 +165,15 @@ def ask(app, question: str, thread: str = "cli"):
 
 if __name__ == "__main__":
     app = build_graph()
-    if len(sys.argv) > 1:
-        ask(app, " ".join(sys.argv[1:]))
-    else:
-        print("Ask about the team (Ctrl-D or 'quit' to exit).")
-        while (q := input("You: ").strip()) not in ("quit", "exit"):
-            if q:
-                ask(app, q)
-    driver.close()
+    try:
+        if len(sys.argv) > 1:
+            ask(app, " ".join(sys.argv[1:]))
+        else:
+            print("Ask about the team (Ctrl-D or 'quit' to exit).")
+            while (q := input("You: ").strip()) not in ("quit", "exit"):
+                if q:
+                    ask(app, q)
+    except (EOFError, KeyboardInterrupt):
+        print()
+    finally:
+        driver.close()

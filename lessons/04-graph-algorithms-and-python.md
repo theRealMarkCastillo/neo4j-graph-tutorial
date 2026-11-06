@@ -141,6 +141,15 @@ Three driver patterns:
 
 ---
 
+## Test it — [`tests/test_04_algorithms_and_python.py`](../tests/test_04_algorithms_and_python.py)
+
+- **Design for tests.** `add_skill(tx, ...)` takes a transaction, so the test hands it a
+  rolled-back one. [`team_graph.py`](../team_graph.py) keeps its demo under
+  `if __name__ == "__main__"`, so importing it writes nothing.
+- **Test algorithms on a graph you can reason about by hand.** In a 5-node star, PageRank
+  *must* rank the hub first. `test_pagerank_on_a_tiny_known_graph` builds one with
+  `gds.graph.project.cypher` and drops it afterwards.
+
 ## Cheat sheet
 
 | Step | Cypher |

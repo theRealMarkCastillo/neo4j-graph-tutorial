@@ -12,19 +12,24 @@ Every user message triggers one recall that combines five sources:
 | **Follow-ups** | open plans due within ±14 days | proactive "how did it go?" |
 | **Recent episodes** | last 3 summaries + mood | continuity between sessions |
 
-Semantic re-ranking (the "generative agents" recipe):
+Semantic re-ranking (the "generative agents" recipe) mixes how well a memory matches the
+message with how important and how recent it is. Lesson 13 replaced the original Cypher
+expression with a tested Python function, [`decay.rank()`](../companion/decay.py):
 
-```cypher
-0.6 * similarity + 0.25 * importance / 10
-  + 0.15 * exp(-days_since_last_used / CASE m.kind WHEN 'feeling' THEN 7.0 ELSE 90.0 END)
 ```
+rank = 0.6 × similarity + 0.4 × importance/10 × 0.5 ^ (age / half-life of its kind)
+```
+
+Memories that have faded below a threshold ("dormant") are left out entirely. See
+[Lesson 13](13-memory-over-time.md) for the half-lives and why age counts from the last time
+the user confirmed something, not the last time it was recalled.
 
 Filters applied **in Cypher**, not left to the prompt:
 - retired memories (`invalidated_at`) and finished plans (`status = 'done'`) are skipped
 - entities a boundary is `ABOUT` never appear in the people list or the entity hop
 
-Recalled memories get `last_accessed`/`access_count` updated, so memories the companion uses
-stay fresh.
+Recalled memories get `last_accessed`/`access_count` updated, for analytics. (Since Lesson 13
+this no longer keeps a memory "fresh": only the user confirming it again resets its decay.)
 
 ### Boundary filter test
 
@@ -182,6 +187,22 @@ The first run (before these fixes) showed five problems. Each one is now handled
 | Both episodes dated with the real clock | `start_episode(on=...)` for simulated dates |
 | Finished plan still in "Relevant memories" | skip `status = 'done'` in recall |
 | The ex appeared in the people list | exclude entities a boundary is `ABOUT` |
+
+## Test it — [`tests/test_10_recall.py`](../tests/test_10_recall.py)
+
+- **Table-driven tests** for the small-talk gate: each bug becomes a new row.
+- **Recall** against hand-written memories: semantic hits, boundaries always in core,
+  sensitive memories kept out of core, plans in follow-ups.
+
+Writing these found the worst bug in the repo. `NOT_PROTECTED` hides memories that share an
+`ABOUT` entity with a boundary. But the user node is an `:Entity` too. A topic boundary
+("don't ask about my job") is ABOUT the user, so it **hid every memory about the user**: plans,
+facts, everything. The fix excludes `:User`.
+
+The next test found a second bug in the same snippet. Its variable `e` collided with an
+`e` already bound in the query it was pasted into, so inside the `EXISTS` "any entity"
+silently became "this entity". A protected person then leaked through the entity hop and
+through "No longer true".
 
 ## Where to go next
 

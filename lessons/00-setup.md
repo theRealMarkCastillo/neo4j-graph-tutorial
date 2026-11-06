@@ -3,7 +3,7 @@
 ## Start Neo4j
 
 ```bash
-cp .env.example .env      # then set NEO4J_PASSWORD (and ANTHROPIC_API_KEY if you want LLM answers)
+cp .env.example .env      # then set NEO4J_PASSWORD (and LLM_* if you want LLM answers)
 docker compose up -d --build
 docker compose ps         # wait for "healthy" (first start downloads APOC + GDS, ~1 min)
 ```
@@ -43,6 +43,28 @@ python3 -m venv .venv
 ```
 
 All scripts read connection settings and keys from `.env` via [`config.py`](../config.py).
+
+## Test it
+
+Every lesson from here on has tests in [`tests/`](../tests). Run them early and often:
+
+```bash
+.venv/bin/python -m pytest                 # fast tests: unit + database, a few seconds, free
+.venv/bin/python -m pytest tests/test_00_setup.py -v
+.venv/bin/python -m pytest -m llm          # LLM evals: real calls, cost money, vary run to run
+```
+
+Three kinds of test, cheapest first. Most of the suite is the first two.
+
+| Kind | Needs | Example | Runs |
+|---|---|---|---|
+| **unit** | nothing | `normalize("girlfriend") == "partner"` | always |
+| **db** | Neo4j up | a write in a rolled-back transaction | by default; skipped if Neo4j is down |
+| **llm** (eval) | `LLM_*` in `.env` | "a move supersedes the old home" | only with `-m llm` |
+
+[`tests/test_00_setup.py`](../tests/test_00_setup.py) is a *smoke test*: Neo4j answers, APOC and
+GDS are installed, the seed is loaded. The cheapest test catches the most common problem.
+A test for a lesson you haven't done yet is **skipped with a reason** (`-ra` shows it), not failed.
 
 ## Starting over
 

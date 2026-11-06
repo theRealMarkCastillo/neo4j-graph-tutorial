@@ -13,13 +13,8 @@ NEO4J_AUTH = (os.getenv("NEO4J_USER", "neo4j"), os.environ["NEO4J_PASSWORD"])
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 EMBED_DIMS = 384
 
-# Optional Anthropic settings (Lesson 5's graphrag.py). The SDK reads ANTHROPIC_API_KEY
-# from the environment itself; an empty value in .env is treated as "not set".
-if not os.getenv("ANTHROPIC_API_KEY"):
-    os.environ.pop("ANTHROPIC_API_KEY", None)
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
-
-# OpenAI-compatible chat endpoint (Lessons 7-10).
+# One OpenAI-compatible chat endpoint for every lesson that calls an LLM (5, 7-12):
+# OpenAI, DeepInfra, OpenRouter, Ollama, LM Studio, vLLM...
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").strip() or None
 LLM_MODEL = os.getenv("LLM_MODEL", "").strip()
 LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip() or "not-needed"  # local servers ignore it
@@ -30,8 +25,21 @@ COMPANION_USER = os.getenv("COMPANION_USER", "Alex")
 COMPANION_NAME = os.getenv("COMPANION_NAME", "Sage")
 
 
+def llm_configured() -> bool:
+    return bool(LLM_MODEL)
+
+
+def llm_client():
+    """The plain OpenAI SDK client for the endpoint in .env (Lesson 5).
+
+    `chat_model()` below wraps this same SDK for LangChain/LangGraph (Lessons 7-12)."""
+    from openai import OpenAI
+
+    return OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, timeout=120, max_retries=2)
+
+
 def chat_model(model: str | None = None, temperature: float | None = None):
-    """A LangChain chat model pointed at the OpenAI-compatible endpoint in .env."""
+    """A LangChain chat model (built on the OpenAI SDK) pointed at the endpoint in .env."""
     from langchain_openai import ChatOpenAI
 
     if not (model or LLM_MODEL):

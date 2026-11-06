@@ -1,15 +1,16 @@
 """Lesson 5.5 — GraphRAG: vector search finds entry points, the graph supplies connected context.
 
 Usage:  .venv/bin/python graphrag.py "who could help with a recommendation engine?"
-If ANTHROPIC_API_KEY is set in .env, Claude writes the answer; otherwise the script
-prints the retrieved context and the prompt it would send.
+If LLM_MODEL (and LLM_BASE_URL / LLM_API_KEY) are set in .env, the LLM writes the answer;
+otherwise the script prints the retrieved context and stops.
 """
 import sys
 
 from fastembed import TextEmbedding
 from neo4j import GraphDatabase
 
-from config import ANTHROPIC_MODEL, EMBED_MODEL as MODEL, NEO4J_AUTH as AUTH, NEO4J_URI as URI
+import config
+from config import LLM_MODEL, EMBED_MODEL as MODEL, NEO4J_AUTH as AUTH, NEO4J_URI as URI
 
 # Step 1 finds the top-k semantically similar nodes; step 2 walks 1 hop out from each and
 # turns every relationship into a plain-English fact the LLM can read.
@@ -45,30 +46,35 @@ def build_context(hits: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def answer_with_claude(question: str, context: str) -> str | None:
+SYSTEM = """You answer questions about a team, using only the knowledge-graph facts inside <context>.
+
+- Recommend the people, projects or skills from the context that fit best, and say which facts support each one.
+- Partial matches are useful: "Eve trains ranking models" is relevant to a recommendation engine.
+- Only if nothing in the context is relevant, say that the graph doesn't cover it. Never invent people or facts."""
+
+
+def answer(question: str, context: str) -> str | None:
+    """Plain OpenAI SDK call: no framework, just messages in, text out."""
+    if not config.llm_configured():
+        print("(No LLM configured: set LLM_MODEL, LLM_BASE_URL and LLM_API_KEY in .env "
+              "to get a generated answer.)\n")
+        return None
+    import openai
+
     try:
-        import anthropic
-        client = anthropic.Anthropic()
-        response = client.beta.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=16000,
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",  # re-runs on another model if this one declines
-            system="Answer using only the team knowledge graph context provided. "
-                   "Name the people, projects and skills that support your answer.",
-            messages=[{"role": "user",
-                       "content": f"<context>\n{context}\n</context>\n\nQuestion: {question}"}],
+        response = config.llm_client().chat.completions.create(
+            model=LLM_MODEL,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": SYSTEM},
+                {"role": "user",
+                 "content": f"<context>\n{context}\n</context>\n\nQuestion: {question}"},
+            ],
         )
-    except TypeError:  # the SDK raises this when no API key / auth token / profile is set
-        print("(No Anthropic credentials found: add ANTHROPIC_API_KEY to .env to get a generated answer.)\n")
+    except openai.APIError as e:
+        print(f"(LLM call failed: {type(e).__name__}: {e})\n")
         return None
-    except anthropic.APIError as e:
-        print(f"(Claude call failed: {type(e).__name__}: {e})\n")
-        return None
-    if response.stop_reason == "refusal":
-        return "(Claude declined to answer.)"
-    return "".join(b.text for b in response.content if b.type == "text")
+    return response.choices[0].message.content
 
 
 if __name__ == "__main__":
@@ -77,7 +83,7 @@ if __name__ == "__main__":
     context = build_context(retrieve(question))
     print("=== Retrieved graph context ===")
     print(context, "\n")
-    answer = answer_with_claude(question, context)
-    if answer:
-        print("=== Claude's answer ===")
-        print(answer)
+    text = answer(question, context)
+    if text:
+        print("=== LLM answer ===")
+        print(text)

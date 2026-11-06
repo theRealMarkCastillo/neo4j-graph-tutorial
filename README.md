@@ -7,7 +7,7 @@ AI companion — with every query's recorded output.
 ## Quick start
 
 ```bash
-cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 7–10
+cp .env.example .env              # set NEO4J_PASSWORD; LLM_* for lessons 5 and 7–12
 docker compose up -d --build      # Neo4j 5 + APOC + Graph Data Science
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
@@ -31,11 +31,13 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | 9 | [The memory write path](lessons/09-memory-write-path.md) | Structured extraction, entity resolution, dedupe, supersede, plans |
 | 10 | [Recall and the companion chat](lessons/10-companion-recall-and-chat.md) | Hybrid recall, LangGraph companion, terminal CLI, two-session demo |
 | 11 | [Harder scenarios and evals](lessons/11-harder-scenarios-and-evals.md) | Context-window + end-of-episode extraction, same-name people, ended relations, history, forgetting, sensitive memories, scenario tests |
+| 12 | [An ontology for the life graph](lessons/12-ontology.md) | Relation vocabulary, synonyms, hierarchy, symmetric/inverse/cardinality/range rules, kinship inference, `(:RelType)` nodes; terms in the [glossary](docs/glossary.md) |
+| 13 | [Memory over time](lessons/13-memory-over-time.md) | Expiry (`valid_until`, status memories), decay and staleness, consolidation into habits, pruning, one testable clock |
 
 **Architecture:** component, LangGraph, sequence, data-model and lifecycle diagrams for the
 agent and the companion are in [docs/architecture.md](docs/architecture.md).
 
-## LLM settings (lessons 7–10)
+## LLM settings (lessons 5 and 7–13)
 
 Any OpenAI-compatible endpoint with tool calling works (OpenAI, DeepInfra, OpenRouter,
 Ollama, LM Studio, vLLM...). Set in `.env`:
@@ -61,12 +63,33 @@ Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
 | `seed/00_seed.cypher` | Starting graph for Lesson 1 |
 | `team_graph.py` | Lesson 4 — Python driver patterns |
 | `embed.py` | Lesson 5 — local embeddings + vector index |
-| `graphrag.py` | Lesson 5 — GraphRAG retrieval (+ Claude answer if a key is set) |
+| `graphrag.py` | Lesson 5 — GraphRAG retrieval (+ LLM answer via the OpenAI SDK if `LLM_*` is set) |
 | `team_agent.py` | Lesson 7 — LangGraph agent with graph tools |
 | `companion/` | Lessons 8–10 — memory schema, store, extraction, LangGraph companion, CLI, demo |
-| `companion/scenarios.py` | Lesson 11 — multi-session scenario tests for memory |
-| `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–11 |
-| `lessons/outputs/` | Recorded runs for lessons 7, 10 and 11 |
+| `companion/scenarios.py` | Lessons 11–12 — multi-session scenario tests for memory |
+| `companion/ontology.py` | Lesson 12 — relation-type ontology: vocabulary, rules, inference |
+| `companion/clock.py`, `companion/decay.py` | Lesson 13 — one clock; the forgetting curve |
+| `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–13 |
+| `tests/`, `pytest.ini` | Per-lesson tests and LLM evals (see *Tests and evals*) |
+| `docs/glossary.md` | Glossary of overlapping memory / graph / ontology terms |
+| `lessons/outputs/` | Recorded runs for lessons 7, 10, 11, 12 and 13 |
+
+## Tests and evals
+
+Every lesson has tests in [`tests/`](tests), named after it (`test_05_vectors_and_graphrag.py`).
+
+```bash
+.venv/bin/python -m pytest                    # unit + database tests: seconds, free (default)
+.venv/bin/python -m pytest -m "not db and not llm"   # unit tests only, no Neo4j needed
+.venv/bin/python -m pytest -m llm             # LLM evals: real calls, cost money
+EVAL_TRIALS=3 .venv/bin/python -m pytest -m llm tests/test_11_extraction_evals.py   # pass rates
+```
+
+A `-m` on the command line *replaces* the default `-m "not llm"` in `pytest.ini`, so spell
+out `and not llm` when you add your own filter. Database tests never leave data behind: writes run in rolled-back transactions, and memory
+tests use their own `pytest` user. A test for a lesson you haven't done yet is skipped with a
+reason. [Lesson 0](lessons/00-setup.md#test-it) explains the three kinds of test, and each
+lesson ends with a *Test it* section on what its tests teach.
 
 ## Common commands
 
@@ -78,6 +101,6 @@ docker compose down -v            # stop and DELETE all data
 .venv/bin/python team_agent.py    # Lesson 7 agent (interactive)
 .venv/bin/python -m companion     # Lesson 10 companion chat (/help for commands)
 .venv/bin/python -m companion.demo   # scripted two-session companion demo
-.venv/bin/python -m companion.scenarios   # Lesson 11 scenario tests (real LLM calls)
+.venv/bin/python -m companion.scenarios   # Lesson 11–13 scenario tests (real LLM calls)
 .venv/bin/python graphrag.py "Who should own our new Rust performance work?"
 ```

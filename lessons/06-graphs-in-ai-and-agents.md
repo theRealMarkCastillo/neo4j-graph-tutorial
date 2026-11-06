@@ -43,6 +43,14 @@ querying; re-embed when text changes; don't embed things better reached by trave
 > **Rule of thumb:** embeddings find where to start, the graph reasons from there, the LLM
 > explains the result.
 
+## Test it — [`tests/test_06_embeddings_vs_graph.py`](../tests/test_06_embeddings_vs_graph.py)
+
+A test can turn a claim from a concept lesson into evidence. Each test asks one question both
+ways:
+- **exact lookup:** "Alice's manager" is one hop in the graph, while vector search only guesses;
+- **counting:** similarity scores can't count;
+- **fuzzy match:** no node mentions "recommendation", yet embeddings still find Eve.
+
 ## Next
 
 - [Lesson 7](07-langgraph-agent-with-graph-tools.md) — a LangGraph agent with graph tools and read-only Cypher.

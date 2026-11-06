@@ -119,6 +119,21 @@ more specific relationship types so queries only expand the slice they need.
 
 ---
 
+## Test it — [`tests/test_03_modeling.py`](../tests/test_03_modeling.py)
+
+Tests can check *how* a query runs, not just what it returns. `EXPLAIN` gives the plan
+without running the query, so a test can fail when someone drops the label that made the
+index usable:
+
+```python
+with_label = plan_ops(driver, "MATCH (n:Person {name:'Alice'}) RETURN n")
+assert any("IndexSeek" in op for op in with_label)
+assert "AllNodesScan" in plan_ops(driver, "MATCH (n {name:'Alice'}) RETURN n")
+```
+
+`test_parameters_not_string_formatting` passes an injection-shaped name as a parameter
+and shows it's treated as plain data.
+
 ## Cheat sheet
 
 | If the thing... | Make it a... |

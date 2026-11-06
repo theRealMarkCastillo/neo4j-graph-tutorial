@@ -106,8 +106,10 @@ SCENARIOS = [
             ("current memory: lives in Chicago", lambda r: any("chicago" in m["text"].lower() for m in r.memories())),
             ("the Austin memory is retired, not deleted", lambda r: bool(r.q(
                 "MATCH (m:Memory {user:$user}) WHERE m.invalidated_at IS NOT NULL AND m.text CONTAINS 'Austin' RETURN m"))),
-            ("no current memory says they live in Austin now", lambda r: not any(
-                "austin" in m["text"].lower() and "chicago" not in m["text"].lower() for m in r.memories())),
+            # Only current *facts* count: "moved to Austin five years ago" is a true past event.
+            ("no current fact says they live in Austin now", lambda r: not any(
+                m["kind"] == "fact" and "austin" in m["text"].lower() and "chicago" not in m["text"].lower()
+                for m in r.memories())),
             ("asking about the past stored nothing new (no echo)", lambda r: not r.q(
                 "MATCH (m:Memory {user:$user})-[:FROM]->(ep:Episode) WHERE date(ep.started_at) = date('2026-11-25') RETURN m")),
             ("the reply answers 'Austin'", lambda r: r.mentions(r.replies[2][0], "Austin")),
@@ -218,6 +220,77 @@ SCENARIOS = [
                 r.greetings[1] + r.replies[1][0], "ADHD", "medication", "diagnos")),
             ("recall includes it when on-topic", lambda r: "ADHD" in format_context(r.store.recall(
                 "I'm struggling to focus at work, my meds don't seem to help", today=D(2026, 11, 9)))),
+        ],
+    ),
+
+    # ---- Lesson 12: ontology
+    Scenario(
+        "ontology_synonyms", "'boyfriend' is stored as the canonical partner; the breakup ends it; the pet stays",
+        [
+            (D(2026, 11, 2), ["My boyfriend Theo and I just adopted a puppy named Waffles!"]),
+            (D(2026, 11, 16), ["Theo and I broke up last week. I'm keeping Waffles though."]),
+        ],
+        [
+            ("no non-canonical type stored (boyfriend)", lambda r: not r.q(
+                "MATCH (:User {id:$user})-[r:RELATED]->() WHERE r.type IN ['boyfriend','girlfriend','bf'] RETURN r")),
+            ("the partner edge to Theo is ended", lambda r: bool(r.q(
+                "MATCH (:User {id:$user})-[r:RELATED {type:'partner'}]->(:Entity {name:'Theo'}) WHERE r.until IS NOT NULL RETURN r"))
+                and not r.q("MATCH (:User {id:$user})-[r:RELATED {type:'partner'}]->(:Entity {name:'Theo'}) WHERE r.until IS NULL RETURN r")),
+            ("Waffles is still an active pet", lambda r: bool(r.q(
+                "MATCH (:User {id:$user})-[r:RELATED {type:'pet'}]->(:Entity {name:'Waffles'}) WHERE r.until IS NULL RETURN r"))),
+        ],
+    ),
+    Scenario(
+        "ontology_cardinality", "Moving ends the old lives_in even if nobody says 'I left Boston'",
+        [
+            (D(2026, 11, 2), ["I live in Boston, in a tiny apartment near the river."]),
+            (D(2026, 11, 20), ["Settling into my new place in Seattle — the move went smoothly!"]),
+        ],
+        [
+            ("exactly one active lives_in", lambda r: r.q(
+                "MATCH (:User {id:$user})-[r:RELATED {type:'lives_in'}]->() WHERE r.until IS NULL RETURN count(r) AS n")[0]["n"] == 1),
+            ("and it is Seattle", lambda r: bool(r.q(
+                "MATCH (:User {id:$user})-[r:RELATED {type:'lives_in'}]->(:Entity {name:'Seattle'}) WHERE r.until IS NULL RETURN r"))),
+            ("Boston is kept as history", lambda r: bool(r.q(
+                "MATCH (:User {id:$user})-[r:RELATED {type:'lives_in'}]->(:Entity {name:'Boston'}) WHERE r.until IS NOT NULL RETURN r"))),
+        ],
+    ),
+    Scenario(
+        "ontology_inference", "A brother's daughter is inferred to be a niece — nobody said 'niece'",
+        [
+            (D(2026, 11, 2), ["My brother Leo just had a baby girl! Her name is Ana."]),
+            (D(2026, 11, 9), ["Who's the newest member of my family?"]),
+        ],
+        [
+            ("Leo is linked as a brother", lambda r: bool(r.q(
+                "MATCH (:User {id:$user})-[:RELATED {type:'brother'}]->(:Entity {name:'Leo'}) RETURN 1"))),
+            ("Leo -daughter/child-> Ana is stored", lambda r: bool(r.q(
+                "MATCH (:Entity {user:$user, name:'Leo'})-[r:RELATED]->(:Entity {name:'Ana'}) "
+                "WHERE r.type IN ['child','daughter'] RETURN r"))),
+            ("Ana is the user's niece — stored, or inferred via Leo", lambda r: bool(r.q(
+                "MATCH (:User {id:$user})-[r:RELATED]->(:Entity {name:'Ana'}) WHERE r.type IN ['niece','niece_or_nephew'] RETURN r"))
+                or any(i["name"] == "Ana" and i["relation"] == "niece_or_nephew" for i in r.store.inferred_relations())),
+            ("the reply names Ana", lambda r: r.mentions(r.replies[1][0], "Ana")),
+        ],
+    ),
+    Scenario(
+        "situational", "Short-lived statuses expire, get a follow-up, and roll up into a habit",
+        [
+            (D(2026, 11, 18), ["Heading to the gym, talk later!"]),
+            (D(2026, 11, 19), ["Morning! I slept terribly though."]),
+            (D(2026, 11, 20), ["Just got back from the gym, my legs are dead."]),
+            (D(2026, 11, 21), ["Off to the gym again after work, then dinner."]),
+            (D(2026, 11, 23), ["Gym again before work today, trying to keep the streak going."]),
+        ],
+        [
+            ("the gym was stored as a status that expires", lambda r: bool(r.q(
+                "MATCH (m:Memory {user:$user}) WHERE toLower(m.text) CONTAINS 'gym' AND m.valid_until IS NOT NULL RETURN m"))),
+            ("the next day nothing says they're at the gym now", lambda r: not any(
+                "gym" in m["text"].lower() and m["kind"] == "status" for m in r.store.memories(today=D(2026, 11, 19)))),
+            ("the next day's greeting asks about the gym", lambda r: r.mentions(r.greetings[1], "gym", "workout")),
+            ("three gym visits became one lasting habit", lambda r: bool(r.q(
+                """MATCH (p:Memory {user:$user}) WHERE p.invalidated_at IS NULL AND p.evidence >= 3
+                     AND p.kind IN ['preference', 'fact'] AND toLower(p.text) CONTAINS 'gym' RETURN p"""))),
         ],
     ),
 ]
