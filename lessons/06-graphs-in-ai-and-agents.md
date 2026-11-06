@@ -43,6 +43,10 @@ querying; re-embed when text changes; don't embed things better reached by trave
 > **Rule of thumb:** embeddings find where to start, the graph reasons from there, the LLM
 > explains the result.
 
+Many of these words (knowledge graph, GraphRAG, hybrid, agent memory) mean something stricter
+in research papers than in product pages. The glossary compares
+[academic, practitioner and marketing usage](../docs/glossary.md#academic-industry-and-marketing-usage).
+
 ## Concepts and design choices
 
 *Where this fits:* The concepts behind steps 5–8, before any memory code. The whole pipeline, step by step, is in [design decisions → the pipeline as concepts](../docs/design-decisions.md#the-pipeline-as-concepts).

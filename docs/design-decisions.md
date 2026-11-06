@@ -52,8 +52,10 @@ memory is borrowed from at least six fields, and much of the confusion comes fro
 <a id="d1"></a>
 ### D1. One database for graph and vectors: Neo4j
 
-**Chose:** Neo4j 5 (Community) holds entities, relationships, memories, episodes **and** their
-vector indexes. Retrieval mixes both in one Cypher query.
+**Chose:** Neo4j 5.26 LTS (Community) holds entities, relationships, memories, episodes
+**and** their vector indexes. Retrieval mixes both in one Cypher query. (Releases after 5.26
+use calendar versions, 2025.01 onwards, and add Cypher 25. 5.26 is the long-term-support line
+of the 5.x series.)
 
 **Why:** biographical memory is relational. "How's my sister?" is a hop to Maya, then to every
 memory `ABOUT` her. "Anyone in my family?" is a walk over typed relationships. "What did I
@@ -64,9 +66,13 @@ the needs that vectors alone don't meet.
 
 **Costs:**
 - A second query language (Cypher) and a less common operational skill set.
-- Neo4j's vector index is good but not a specialist: no built-in hybrid BM25 + vector fusion
-  in one call, and filters run *after* the approximate search (that's why recall asks for the
-  top 50 and filters by `user` afterwards; see D17).
+- Neo4j's vector index is good but not a specialist: no BM25 + vector fusion inside the
+  database (the `neo4j-graphrag` Python package's `HybridRetriever` combines a vector and a
+  full-text index in the client).
+- On 5.26, filters run *after* the approximate search. That's why recall asks for the top 50
+  and filters by `user` afterwards (see D4). Neo4j 2026.01 added filtering *inside* the vector
+  index (Cypher 25's `SEARCH` clause, with filter properties declared on the index) as a
+  preview. That removes this cost on newer versions.
 - Community Edition has one user database, no fine-grained access control and no clustering.
 
 **Alternatives:**
@@ -226,7 +232,11 @@ delete (D18), because retiring isn't forgetting.
 **Alternatives:**
 - Overwrite in place (simplest, no history).
 - An append-only event log with projections (event sourcing: full audit, more machinery).
-- Mem0's style: the LLM chooses ADD/UPDATE/DELETE/NOOP against similar existing memories.
+- Mem0's styles:
+  - 1.x: the LLM chose ADD/UPDATE/DELETE/NOOP against similar existing memories.
+  - 2.0 (2026): extraction is a single ADD-only pass, and conflicting versions are resolved
+    when memories are retrieved. That's write-cheap and read-heavy, the opposite of
+    supersession at write time.
 - Graphiti's style: validity intervals on fact edges.
 
 <a id="d9"></a>
@@ -276,8 +286,9 @@ The block uses tokens even for "hi".
   when memory is rarely needed, but the model must know to look.
 - Long context: put everything in the prompt. That's fine for small memories but expensive,
   and recall inside very long contexts degrades.
-- Microsoft GraphRAG *global* search (community summaries) is for corpus-wide themes, not one
-  person.
+- Microsoft GraphRAG's *global* search (community summaries), DRIFT search (local search
+  primed by community reports) and LazyGraphRAG (summaries deferred to query time) target
+  questions over a whole document corpus, not one person's life.
 
 <a id="d11"></a>
 ### D11. Hybrid retrieval: vectors find where to start, the graph reasons from there
@@ -292,8 +303,10 @@ counted or multi-hop questions.
 **Costs:** no keyword search, so exact rare words (a medication name, a product code) depend on
 the embedding model or the name match.
 
-**Alternatives:** add Neo4j full-text (BM25) as another retriever and fuse ranks
-(reciprocal-rank fusion). It's a cheap, sensible next step.
+**Alternatives:** add a Neo4j full-text (Lucene, BM25-style) index as another retriever and
+fuse the ranks, for example with reciprocal-rank fusion (Graphiti fuses embedding and BM25
+results this way). Neo4j's `neo4j-graphrag` package ships a `HybridRetriever` (vector +
+full-text). It's a cheap, sensible next step.
 
 <a id="d12"></a>
 ### D12. Rank with a transparent formula; use a learned model only to label
@@ -454,8 +467,13 @@ need several runs.
 
 **Alternatives:**
 - LLM-as-judge for open-ended reply quality.
-- Public long-term memory benchmarks such as LoCoMo and LongMemEval, to compare with other
-  systems.
+- Public long-term memory benchmarks, to compare with other systems:
+  - LoCoMo (2024): very long multi-session dialogue; doesn't score knowledge updates.
+  - LongMemEval (2024): adds knowledge updates and abstention, which matter for
+    supersession (D8).
+  - BEAM (2026): memory at 1M–10M tokens.
+
+  Most published scores are self-reported by vendors.
 - Online metrics from real users (corrections, "you already told me").
 
 ---
@@ -466,7 +484,7 @@ Honest limits, and what would fill each one:
 
 | Gap | Risk | What would fill it |
 |---|---|---|
-| **Memory poisoning / prompt injection** | Text the user (or a pasted document) says is stored, then returned in future prompts as trusted memory | Store provenance and source type; treat memory as data in the prompt; filter instruction-like text at write time; review high-impact memories |
+| **Memory poisoning / prompt injection** (OWASP's 2026 Top 10 for agentic applications lists it as ASI06, memory and context poisoning) | Text the user (or a pasted document) says is stored, then returned in future prompts as trusted memory, and it outlives the session | Store provenance and source type; treat memory as data in the prompt; filter instruction-like text at write time; review high-impact memories |
 | **Scale** | One `User` node becomes a supernode; one Neo4j instance; post-filtered vector search | Partition by user (D4); bucket edges by time; dedicated vector index per tenant; read replicas (Enterprise) |
 | **Keyword retrieval** | Rare exact words missed by embeddings | Full-text index + rank fusion (D11) |
 | **Reflection / insights** | No higher-level conclusions ("Alex is happier since moving") | Scheduled LLM reflection writing new `insight` memories with evidence links |
@@ -475,7 +493,7 @@ Honest limits, and what would fill each one:
 | **Shared memory across people** | Two users who know the same Maya have two Mayas | Global entity layer with consent; cross-user resolution |
 | **Erasure outside the graph** | Backups, logs, traces, LLM provider retention | Retention policies, log redaction, provider no-retention settings |
 | **Cost control** | One extraction call per turn, one remote embedding call per recall | Cheaper extraction model (`LLM_EXTRACTION_MODEL`), batching, caching, skipping more small talk |
-| **Benchmarks** | Our scenarios aren't comparable with other systems | Run LoCoMo / LongMemEval-style suites |
+| **Benchmarks** | Our scenarios aren't comparable with other systems | Run LoCoMo / LongMemEval / BEAM-style suites |
 | **Learned thresholds** | Hand-measured cut-offs per model | Collect labelled pairs from the trace UI and refit |
 | **Non-English** | Role-name rules and regexes are English | Language-aware rules; multilingual embedding model (Qwen3 is multilingual) |
 
@@ -489,12 +507,21 @@ shape of each approach, not a feature list.
 | System | Storage | Who writes memory | Update model | Retrieval |
 |---|---|---|---|---|
 | **This tutorial** | Neo4j: graph + vectors | background extractor + end-of-episode pass | supersede, bi-temporal, reinforce | 9 retrievers in code, every turn |
-| **MemGPT / Letta** | in-context *core* blocks + *archival* store + *recall* (conversation) store | the agent itself, via tools | the agent edits blocks | agent searches when it chooses |
-| **Mem0** | vector store, optional graph store | LLM extraction pipeline | LLM picks ADD / UPDATE / DELETE / NOOP | vector (+ graph) search |
-| **Zep / Graphiti** | temporal knowledge graph (Neo4j and others) | ingestion of episodes into entities and fact edges | bi-temporal validity on edges | semantic + keyword + graph search |
-| **LangMem** | LangGraph `BaseStore` | hot-path tools and/or a background manager | profile (one doc) or collection | store search |
-| **Microsoft GraphRAG** | entity graph + community summaries over a corpus | offline indexing | re-index | local (entity) or global (community) search |
+| **MemGPT / Letta** | in-context *core* memory blocks + *archival* store + *recall* (conversation history) store | the agent itself via tools, and optionally a *sleep-time* agent in the background | agents edit blocks | agent searches when it chooses |
+| **Mem0** | vector store, optional graph store (Neo4j and others) | LLM extraction pipeline | 1.x: LLM picks ADD / UPDATE / DELETE / NOOP; 2.0 (2026): ADD-only, conflicts resolved at retrieval | vector (+ graph) search |
+| **Zep / Graphiti** | temporal knowledge graph (Neo4j recommended, FalkorDB and others) | ingestion of *episodes* into entities and fact edges | bi-temporal validity on edges; contradictions invalidate old edges | embeddings + BM25 + graph distance, fused |
+| **LangMem** | LangGraph `BaseStore` | hot-path tools and/or a background memory manager | *profile* (one schema) or *collection* (many items) | store search |
+| **Microsoft GraphRAG** | entity graph + community summaries over a corpus | offline indexing | re-index | local, global, DRIFT; LazyGraphRAG defers summarization to query time |
 
-Graphiti is the closest relative: also a temporal knowledge graph on Neo4j. The main
-differences here are that a memory is a sentence node pointing at entities rather than a
-fact on an edge, the explicit relation ontology with rules, and per-persona visibility.
+Graphiti is the closest relative: also a temporal knowledge graph on Neo4j, with episodes as
+provenance. The main differences here are:
+- a memory is a sentence node pointing at entities, rather than a fact on an edge;
+- the explicit relation ontology with rules;
+- per-persona visibility;
+- no keyword retrieval (D11).
+
+Letta's sleep-time agents and our background extractor plus `consolidate()` solve the same
+problem: memory work that shouldn't slow down the reply.
+
+*Checked against public documentation in November 2026. Sources are listed at the end of the
+[glossary](glossary.md#sources-checked).*

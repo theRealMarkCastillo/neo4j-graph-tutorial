@@ -31,7 +31,10 @@ explain the design rather than the code:
 - **[Glossary](docs/glossary.md)**: terms that mean different things in different fields.
   *[Semantic](docs/glossary.md#semantic)*, *[ontology](docs/glossary.md#ontology)*,
   *[recall](docs/glossary.md#recall)*, *[profile](docs/glossary.md#profile)* and others have
-  one section each, sense by sense.
+  one section each, sense by sense. A second table compares
+  [academic, practitioner and marketing usage](docs/glossary.md#academic-industry-and-marketing-usage)
+  of terms like *context engineering*, *context graph*, *memory layer*, *semantic layer* and
+  *GraphRAG*.
 
 Every lesson has a **Concepts and design choices** section that does the same at lesson
 level: which sense each term has there, and the choices made, with costs and alternatives.
@@ -79,6 +82,8 @@ Ollama, LM Studio, vLLM...). Set in `.env`:
 | `COMPANION_USER`, `COMPANION_NAME` | default user and companion names |
 
 Embeddings run locally by default (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
+Lessons 5–7 and the test suite always use that local model. The companion can use a remote
+model instead (Lesson 19 has the full table of what runs where).
 Lesson 19 switches the companion to a remote model with three more keys:
 
 | Key | |

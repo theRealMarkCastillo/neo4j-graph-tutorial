@@ -232,7 +232,8 @@ The extractor flags health, diagnoses, medication, sexuality, religion, finances
 and trauma as `sensitive`. They are never in the core profile, and the vector ([semantic](../docs/glossary.md#semantic), sense 2) search includes
 them only when they are **(near) the best match** for the message.
 
-Why relative, not a fixed score? With `bge-small` every score falls in a narrow band:
+Why relative, not a fixed score? With `bge-small` every score falls in a narrow band (a larger
+model spreads them out, and Lesson 19 re-measures the floor and margin for it):
 
 ```
 "I'm struggling to focus, my meds don't help"   ADHD memory 0.781  ← top match

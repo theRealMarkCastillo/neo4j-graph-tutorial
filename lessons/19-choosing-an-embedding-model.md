@@ -50,7 +50,8 @@ Three things to notice:
   `passage: ` prefixes and is sensitive to them. A model's usage notes are part of the model.
 - **The instruction matters.** Qwen3-Embedding is trained to read an instruction before a
   *query* and nothing before a stored text. Without the instruction, the 8B fell from 0.994 to
-  about 0.90.
+  about 0.90. That's a bigger drop than the 1–5% Qwen's model card reports on standard
+  benchmarks. Short chat messages leave the model little else to go on.
 
 With Qwen3-8B, a single cut-off got 36 of 37 messages right. bge-small couldn't do that at any
 cut-off, and that's why Lesson 18 had to add a cross-encoder.
@@ -189,6 +190,21 @@ This gives three things:
 - **Switching back costs nothing.** The old vectors are still there.
 - **Lessons 5–7** (`embed.py`, `graphrag.py`, `team_agent.py`) keep `LOCAL_EMBED_MODEL` and
   their own 384-dim index.
+
+### Where each model runs, after this lesson
+
+| What | Model | Runs | Why there |
+|---|---|---|---|
+| Your chats (CLI and web UI) | Qwen3-Embedding-8B, if `EMBED_BASE_URL` is set | remote API | best separation of related and unrelated memories |
+| The same, with `EMBED_BASE_URL` empty | bge-small | fastembed, CPU | no key, offline, the course default |
+| The test suite | bge-small | fastembed, CPU | offline, free, seconds; pins thresholds |
+| Lessons 5–7 scripts | bge-small | fastembed, CPU | the learning examples need no account |
+| "Loosely related" labels | the cross-encoder `ms-marco-MiniLM-L-6-v2` | fastembed, CPU | only for models without a measured `weak_below` (bge-small) |
+| Lesson 15 graph embeddings | FastRP | inside Neo4j (GDS) | they come from graph structure, not text |
+
+So fastembed stays. It's the zero-setup path, the tests depend on it, and it's the fallback
+when the network or the provider is down. A remote model is an upgrade you opt into, not a
+requirement.
 
 ## 5. Backfill — [`companion/reembed.py`](../companion/reembed.py)
 

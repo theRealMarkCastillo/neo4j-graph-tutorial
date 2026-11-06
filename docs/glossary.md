@@ -13,14 +13,27 @@ one sense per row. The reasons behind each design choice, and the alternatives, 
 [Time and change](#time-and-change) · [Memory upkeep](#memory-upkeep-and-quality) ·
 [Privacy](#privacy-and-safety) · [Agents and LangGraph](#agents-and-langgraph) ·
 [Evaluation](#evaluation) · [Concurrency](#concurrency-and-transactions) ·
-[Graph data science](#graph-data-science) · [Words with several meanings](#words-with-several-meanings)
+[Graph data science](#graph-data-science) ·
+[Academic, industry and marketing usage](#academic-industry-and-marketing-usage) ·
+[Words with several meanings](#words-with-several-meanings) · [Sources](#sources-checked)
 
 ---
 
 ## Kinds of memory
 
 From cognitive psychology (Tulving's episodic/semantic split, 1972), borrowed by agent
-frameworks such as the CoALA paper and LangMem.
+frameworks such as the CoALA paper (2023: working memory plus episodic, semantic and
+procedural long-term stores) and LangMem.
+
+A 2025 survey, *Memory in the Age of AI Agents* (arXiv 2512.13564), argues these words have
+blurred and proposes three axes instead:
+- **forms**: *token-level* (text you can read: our memories), *parametric* (in model weights)
+  and *latent* (hidden states, KV caches);
+- **functions**: *factual* (≈ semantic), *experiential* (≈ episodic, plus lessons learned) and
+  *working*;
+- **dynamics**: how memory is formed, evolves and is retrieved.
+
+This repo is token-level memory with factual and experiential functions.
 
 | Term | Meaning | In this repo | Often confused with |
 |---|---|---|---|
@@ -219,6 +232,43 @@ See [Lesson 12](../lessons/12-ontology.md).
 
 ---
 
+## Academic, industry and marketing usage
+
+The same term often has a precise academic meaning, a working meaning among practitioners,
+and a looser one in product marketing ("marketecture"). None is wrong, but mixing them causes
+most design arguments. The last column says where this repo stands.
+
+| Term | Academic / standards meaning | Practitioner meaning | Loose / marketing meaning | This repo |
+|---|---|---|---|---|
+| **Agent memory** | Long-term stores an agent reads and writes during its decision cycle (CoALA) | Persisting facts about users across sessions, plus retrieval into the prompt | Any feature that makes a chatbot "remember you"; "infinite memory", "perfect recall" | The practitioner meaning, with the psychology kinds made explicit (Lesson 8) |
+| **Memory layer** | — (not an academic term) | A service between the app and the LLM that extracts, stores and retrieves memories (Mem0, Zep) | "Add memory to any agent in 3 lines" | A library-sized memory layer you can read end to end (`MemoryStore`) |
+| **Context engineering** | Generalizes "context" from HCI (Dey); framed in 2025 papers as assembling the model's input | Choosing which tokens go into each call: instructions, tools, retrieved data, memory, history. The term spread in mid-2025 (Cognition, Shopify's CEO, Anthropic's September 2025 guide) | A rebrand of prompt engineering | `recall()` + `format_context()` + the trace that shows the result (Lessons 10, 18) |
+| **Knowledge graph** | Entities and typed relations, usually under an ontology, often with reasoning (KR, Semantic Web) | A property graph of entities and facts used for search or RAG | Any graph database, or any data with links | Life graph + memories + RelType ontology ([knowledge graph](#knowledge-graph)) |
+| **Temporal / bi-temporal KG** | Facts with valid time, and with transaction time too (temporal databases) | Facts that expire or get superseded instead of overwritten (Graphiti) | "Memory that understands time" | Bi-temporal memories and relations (Lessons 8, 13) |
+| **Context graph** | — (a 2025–26 industry term) | A graph of *decisions*: policies, exceptions, precedents, evidence and outcomes, so agents know *why* something happened. Thoughtworks' Radar (April 2026) rates it "Assess" | The next thing after knowledge graphs | Partly: provenance (`FROM` episode), supersession history and the trace record what was *said* and *decided by the code*, but not decisions with reasons as nodes |
+| **Ontology** | OWL/RDFS classes, properties and axioms with formal semantics | A typed vocabulary with rules shared by a team | Palantir's *Ontology*: an operational layer of business objects, links **and actions** that apps and agents act through; or any data model | A lightweight ontology (sense 2 under [ontology](#ontology)), no actions |
+| **Semantic layer** | — (BI and data-warehouse term) | Governed definitions of metrics and dimensions over a warehouse (dbt, Snowflake semantic models, LookML) | "The semantic layer for AI": any metadata an agent can read | Not used. The ontology plays the "agreed meaning" role for relation types |
+| **GraphRAG** | Microsoft Research's method (2024): an entity graph plus community summaries for global questions; later DRIFT and LazyGraphRAG | Any RAG that retrieves through a graph, usually vector entry points + traversal | "RAG, but with a graph, so no hallucinations" | The local style (Lessons 5, 10) |
+| **Hybrid search** | Lexical (BM25) + dense retrieval, fused (e.g. reciprocal-rank fusion) | Same, or vector + graph | "Best of both worlds" | Vector + graph; no lexical retriever yet ([D11](design-decisions.md#d11)) |
+| **Vector database** | — | A database built around ANN indexes (Pinecone, Qdrant, Milvus...) | Anything with a vector index, including general databases | A vector index inside Neo4j ([D1](design-decisions.md#d1)) |
+| **Agentic RAG** | — | The model decides when and what to retrieve, in a loop, through tools | Any RAG with an LLM involved | Lesson 7 is agentic; the companion's recall is not ([D10](design-decisions.md#d10)) |
+| **Reranking** | Re-scoring a candidate list with a stronger model (cross-encoder, learning to rank) | Same, often a hosted reranker API | — | A formula plus an optional cross-encoder label ([rerank and relevance](#rerank-and-relevance)) |
+| **Consolidation / sleep-time compute** | Memory consolidation in neuroscience (sleep strengthens and reorganizes memories) | Background jobs that rewrite memory between conversations (Letta's sleep-time agents) | "Your agent learns while it sleeps" | End-of-episode pass + `consolidate()` (Lessons 11, 13) |
+| **Memory poisoning** | Data poisoning / prompt injection research applied to stored memory | Malicious or mistaken text stored as memory and trusted later; ASI06 in OWASP's 2026 Top 10 for agentic applications | — | A known gap ([gaps](design-decisions.md#gaps-what-this-design-does-not-cover)) |
+| **Long-term memory benchmark** | Datasets with defined tasks: LoCoMo (2024), LongMemEval (2024: adds knowledge updates and abstention), BEAM (2026: 1M–10M tokens) | Leaderboard numbers on those | Self-reported scores across vendors, often with different settings | Not run; our scenarios are code-graded and repo-specific ([D20](design-decisions.md#d20)) |
+| **Digital twin** | A simulation model kept in sync with a physical system | A live model of an organization's entities and processes | Any database about real things | Not used |
+
+**How to read a vendor claim:**
+1. Ask which **sense** of the word is meant, using the table above.
+2. Ask **what is stored** (sentences, triples, documents) and **who decides** what gets
+   written and read (code, the model, a background job).
+3. Ask **how updates are handled** (overwrite, supersede, append and resolve later).
+4. Ask **how it was measured** (which benchmark, run by whom).
+
+Most systems differ on those questions, not on the vocabulary.
+
+---
+
 ## Words with several meanings
 
 The same word names different things in psychology, databases, information retrieval and LLM
@@ -394,3 +444,27 @@ Only (1) and (4) remove data.
 (1) a **system prompt** or persona instruction to the chat model; (2) an embedding model's
 **query instruction**: text put before a query so the model embeds it for retrieval
 (Lesson 19); (3) instruction-tuned models in general. Sense 2 is never seen by the chat model.
+
+---
+
+## Sources checked
+
+Terms and the comparisons in [design-decisions.md](design-decisions.md) were checked against
+these in November 2026. Products change quickly: check the current documentation before
+relying on a product detail.
+
+- CoALA: Sumers et al., *Cognitive Architectures for Language Agents* — https://arxiv.org/abs/2309.02427
+- Hu et al., *Memory in the Age of AI Agents* (survey) — https://arxiv.org/abs/2512.13564
+- Letta memory architecture — https://docs.letta.com/guides/agents/architectures/memgpt and https://www.letta.com/blog/agent-memory
+- LangMem conceptual guide — https://langchain-ai.github.io/langmem/concepts/conceptual_guide
+- Mem0 graph memory — https://docs.mem0.ai/open-source/features/graph-memory ; Mem0 2.0 (ADD-only extraction) — https://pypi.org/project/mem0ai/2.0.0/ and https://docs.mem0.ai/migration/
+- Graphiti (Zep's temporal knowledge graph) — https://pypi.org/project/graphiti-core/
+- Microsoft GraphRAG: DRIFT search — https://www.microsoft.com/en-us/research/blog/introducing-drift-search-combining-global-and-local-search-methods-to-improve-quality-and-efficiency/ ; LazyGraphRAG — https://www.microsoft.com/en-us/research/blog/lazygraphrag-setting-a-new-standard-for-quality-and-cost/
+- Neo4j vector values and limits (4096 dims) — https://neo4j.com/docs/cypher-manual/5/values-and-types/vector/ ; `SEARCH` clause — https://neo4j.com/docs/cypher-manual/current/clauses/search/ ; versions — https://endoflife.date/neo4j
+- Neo4j hybrid retrieval (`HybridRetriever`) — https://neo4j.com/developer-blog/hybrid-retrieval-graphrag-python-package/
+- GQL, ISO/IEC 39075:2024 — https://en.wikipedia.org/wiki/Graph_Query_Language
+- Qwen3-Embedding (query instructions) — https://github.com/QwenLM/Qwen3-Embedding
+- Thoughtworks Technology Radar, *context graph* — https://www.thoughtworks.com/radar/techniques/context-graph
+- Ontology vs semantic layer (vendor view) — https://atlan.com/know/ontology-vs-semantic-layer/
+- Memory benchmarks overview (vendor-written) — https://www.cognee.ai/ai-memory-benchmarks
+- OWASP Top 10 for Agentic Applications 2026, ASI06 (secondary summary) — https://guptadeepak.com/agent-security/threats/asi06/

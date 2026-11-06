@@ -37,6 +37,18 @@ Gives 10 people/projects a text `description`, embeds them with a **local** mode
 (`BAAI/bge-small-en-v1.5`, 384 dims, no API key), stores the vectors, adds an `:Embedded`
 label, and creates one vector index `embedded_vec` over all of them.
 
+> **Where embeddings are computed in this course:**
+>
+> | Where | How | Model |
+> |---|---|---|
+> | 5.1 toy example | typed by hand | three made-up numbers |
+> | Lessons 5–7 scripts (`embed.py`, `graphrag.py`, `team_agent.py`) | fastembed on your CPU | bge-small, always |
+> | The companion (Lessons 8–19) | `companion/embeddings.py` | bge-small by default, or a remote endpoint set in `.env` (Lesson 19) |
+> | The test suite | fastembed on your CPU | bge-small, always, so tests run offline |
+>
+> A small local model is the right start: no key, no cost, and you can see every step.
+> [Lesson 19](19-choosing-an-embedding-model.md) measures what a larger remote model buys.
+
 ```bash
 .venv/bin/python embed.py
 ```

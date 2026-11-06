@@ -49,9 +49,9 @@ flowchart LR
         subgraph py["Python (.venv)"]
             cli["CLIs<br/>team_agent.py<br/>python -m companion"]
             lg["LangGraph apps"]
-            fe["fastembed<br/>BAAI/bge-small-en-v1.5<br/>384-dim, CPU"]
+            fe["fastembed (local, CPU)<br/>bge-small 384-dim: Lessons 5-7, tests,<br/>companion default · cross-encoder"]
         end
-        env[(".env<br/>NEO4J_* / LLM_*")]
+        env[(".env<br/>NEO4J_* / LLM_* / EMBED_*")]
         subgraph docker["Docker Compose"]
             neo["neo4j:5.26 + APOC + GDS<br/>:7474 Browser · :7687 Bolt"]
             vol[("named volumes<br/>data · plugins · logs")]
@@ -64,6 +64,7 @@ flowchart LR
     cli --> lg
     lg -- "Bolt (neo4j driver)" --> neo
     lg -- "embed text" --> fe
+    lg -. "HTTPS /embeddings<br/>(if EMBED_BASE_URL, Lesson 19)" .-> llm
     lg -- "HTTPS chat + tool calls<br/>(langchain-openai)" --> llm
     env -. "config.py" .-> py
     neo --- vol
@@ -107,7 +108,7 @@ flowchart TB
 
     neo[("Neo4j")]
     llm["Chat LLM"]
-    emb["fastembed"]
+    emb["embeddings.py<br/>fastembed (local) or<br/>EMBED_BASE_URL (remote)"]
 
     tagraph --> config
     cgraph --> config
@@ -224,7 +225,7 @@ sequenceDiagram
     participant C as CLI
     participant G as Companion graph
     participant S as MemoryStore
-    participant E as fastembed
+    participant E as Embeddings (local or remote)
     participant N as Neo4j
     participant L as Chat LLM
     participant X as Extraction LLM
@@ -324,7 +325,7 @@ memory ABOUT an entity that an active boundary memory is also ABOUT.
 
 ```mermaid
 flowchart LR
-    Q["user message"] --> EMB["embed (fastembed)"]
+    Q["user message"] --> EMB["embed (query side: local bge-small<br/>or remote Qwen3-8B, Lesson 19)"]
 
     EMB --> SEM["Semantic<br/>memory_vec top 50<br/>rank = 0.6·sim + 0.4·strength<br/>(strength decays per kind, Lesson 13)<br/><i>skips expired, dormant, retired, done, protected;<br/>sensitive only if ≈ top match</i>"]
     Q --> CORE["Core profile<br/>all boundaries +<br/>top 8 facts/prefs ★6+<br/><i>not sensitive, not protected</i>"]
