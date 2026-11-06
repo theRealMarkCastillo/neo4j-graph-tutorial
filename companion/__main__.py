@@ -1,7 +1,7 @@
 """Terminal chat with the companion:   .venv/bin/python -m companion [--user NAME] [--debug]
 
 Commands:  /memories [kind]  /all  /people  /timeline  /history <id>  /forget <id>
-           /recall <text>  /debug  /new  /help  /quit
+           /forget-entity <name or id>  /recall <text>  /debug  /new  /help  /quit
 """
 import argparse
 import datetime as dt
@@ -10,18 +10,16 @@ from langchain_core.messages import HumanMessage
 from neo4j import GraphDatabase
 
 from config import COMPANION_NAME, COMPANION_USER, NEO4J_AUTH, NEO4J_URI
-from companion.extract import summarize_episode
-from companion.graph import build_companion, greeting, seed_thread
+from companion.graph import build_companion, close_episode, greeting, seed_thread
 from companion.store import MemoryStore, format_context
 
 DIM, RESET, BOLD = "\033[2m", "\033[0m", "\033[1m"
 
 
-def close_episode(store: MemoryStore, episode_id: str) -> None:
-    summary = summarize_episode(store.user_name, store.episode_transcript(episode_id))
-    store.end_episode(episode_id, summary.summary if summary else None, summary.mood if summary else None)
-    if summary:
-        print(f"{DIM}  ✎ episode saved: {summary.summary} (mood: {summary.mood}){RESET}")
+def end_session(store: MemoryStore, episode_id: str, today: dt.date) -> None:
+    print(f"{DIM}  (saving this conversation...){RESET}")
+    for line in close_episode(store, episode_id, today):
+        print(f"{DIM}  ✎ {line}{RESET}")
 
 
 def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None:
@@ -29,11 +27,12 @@ def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None
         rows = store.memories(kind=arg or None, include_retired=cmd == "/all")
         for m in rows:
             flag = " (retired)" if m["retired"] else (f" [{m['status']}]" if m["status"] else "")
+            flag += (" 🔒" if m["sensitive"] else "") + (f" ↻{m['annual_date']}" if m["annual_date"] else "")
             print(f"  {m['id']}  [{m['kind']}] {m['text']}  ★{m['importance']}{flag}")
         print(f"  {len(rows)} memories")
     elif cmd == "/people":
         for p in store.recall(arg or "people", today=today)["people"]:
-            print(f"  {p['name']} — {p['relation']} ({p['kind']})")
+            print(f"  {p['name']} — {p['relation']} ({p['kind']})  {DIM}{p['id']}{RESET}")
     elif cmd == "/timeline":
         for t in store.timeline():
             flag = " (retired)" if t["retired"] else (f" [{t['status']}]" if t["status"] else "")
@@ -43,6 +42,10 @@ def show_command(store: MemoryStore, cmd: str, arg: str, today: dt.date) -> None
             print(f"  {'now ' if i == 0 else 'was '} {h['text']}")
     elif cmd == "/forget":
         print("  deleted" if store.forget(arg) else "  no such memory")
+    elif cmd == "/forget-entity":
+        gone = store.forget_entity(arg)
+        print(f"  forgot {gone['name']}: {gone['memories']} memories deleted, {gone['turns']} turns and "
+              f"{gone['episodes']} summaries redacted" if gone else "  no such entity")
     elif cmd == "/recall":
         print(format_context(store.recall(arg, today=today), today))
 
@@ -82,7 +85,7 @@ def main() -> None:
                     debug = not debug
                     print(f"  debug {'on' if debug else 'off'}")
                 elif cmd == "/new":
-                    close_episode(store, config["configurable"]["thread_id"])
+                    end_session(store, config["configurable"]["thread_id"], today)
                     config = new_session()
                 else:
                     show_command(store, cmd, arg.strip(), today)
@@ -99,7 +102,7 @@ def main() -> None:
     except (EOFError, KeyboardInterrupt):
         print()
     finally:
-        close_episode(store, config["configurable"]["thread_id"])
+        end_session(store, config["configurable"]["thread_id"], today)
         driver.close()
 
 

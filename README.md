@@ -30,6 +30,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | 8 | [Memory design for companions](lessons/08-memory-design-for-companions.md) | Memory kinds, life graph, episodes, bi-temporal facts, boundaries |
 | 9 | [The memory write path](lessons/09-memory-write-path.md) | Structured extraction, entity resolution, dedupe, supersede, plans |
 | 10 | [Recall and the companion chat](lessons/10-companion-recall-and-chat.md) | Hybrid recall, LangGraph companion, terminal CLI, two-session demo |
+| 11 | [Harder scenarios and evals](lessons/11-harder-scenarios-and-evals.md) | Context-window + end-of-episode extraction, same-name people, ended relations, history, forgetting, sensitive memories, scenario tests |
 
 ## LLM settings (lessons 7–10)
 
@@ -60,7 +61,8 @@ Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
 | `graphrag.py` | Lesson 5 — GraphRAG retrieval (+ Claude answer if a key is set) |
 | `team_agent.py` | Lesson 7 — LangGraph agent with graph tools |
 | `companion/` | Lessons 8–10 — memory schema, store, extraction, LangGraph companion, CLI, demo |
-| `lessons/outputs/` | Recorded runs for lessons 7 and 10 |
+| `companion/scenarios.py` | Lesson 11 — multi-session scenario tests for memory |
+| `lessons/outputs/` | Recorded runs for lessons 7, 10 and 11 |
 
 ## Common commands
 
@@ -72,5 +74,6 @@ docker compose down -v            # stop and DELETE all data
 .venv/bin/python team_agent.py    # Lesson 7 agent (interactive)
 .venv/bin/python -m companion     # Lesson 10 companion chat (/help for commands)
 .venv/bin/python -m companion.demo   # scripted two-session companion demo
+.venv/bin/python -m companion.scenarios   # Lesson 11 scenario tests (real LLM calls)
 .venv/bin/python graphrag.py "Who should own our new Rust performance work?"
 ```

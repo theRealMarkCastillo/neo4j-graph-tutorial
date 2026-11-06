@@ -42,6 +42,10 @@ recall("I ran into Jordan today"):
 START ──► recall ──► respond ──► remember ──► END
 ```
 
+> Lesson 11 extends this to `recall → respond → log → (worth remembering?) → remember`,
+> adds an end-of-episode extraction pass, and fixes gaps found by scenario tests. The outputs
+> below were recorded with the Lesson 10 version.
+
 | Node | Does | Memory layer |
 |---|---|---|
 | `recall` | `store.recall(last message)` → formatted memory block | long-term (Neo4j) |
@@ -180,6 +184,8 @@ The first run (before these fixes) showed five problems. Each one is now handled
 | The ex appeared in the people list | exclude entities a boundary is `ABOUT` |
 
 ## Where to go next
+
+[Lesson 11](11-harder-scenarios-and-evals.md) handles several of these, plus harder cases.
 
 - **Run extraction in the background** (a queue or `asyncio` task) so replies never wait on it.
 - **Consolidation job**: periodically merge related memories, update entity summaries, and

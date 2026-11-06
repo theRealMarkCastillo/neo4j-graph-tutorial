@@ -11,8 +11,7 @@ from langchain_core.messages import HumanMessage
 from neo4j import GraphDatabase
 
 from config import COMPANION_NAME, NEO4J_AUTH, NEO4J_URI
-from companion.extract import summarize_episode
-from companion.graph import build_companion, greeting, seed_thread
+from companion.graph import build_companion, close_episode, greeting, seed_thread
 from companion.store import MemoryStore, format_context
 
 USER = "Alex"
@@ -58,10 +57,9 @@ def main() -> None:
                 elif node == "remember":
                     for line in out["memory_log"]:
                         print(f"   ✎ {line}")
-        s = summarize_episode(USER, store.episode_transcript(episode_id))
-        store.end_episode(episode_id, s.summary if s else None, s.mood if s else None)
-        if s:
-            print(f"\n   ✎ episode: {s.summary} (mood: {s.mood})")
+        print()
+        for line in close_episode(store, episode_id, today):
+            print(f"   ✎ {line}")
 
     today = SESSIONS[-1][0]
     rule("/memories (current)")

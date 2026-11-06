@@ -34,6 +34,10 @@ Key prompt rules (see `EXTRACT_SYSTEM`): one standalone third-person sentence pe
 absolute dates, only what the user said, supersede instead of duplicating, list the protected
 person in a boundary's `about`.
 
+> Lesson 11 adds earlier turns as context, a second pass at the end of each conversation,
+> and new fields: `ref`/`new` on entities, `ended` on relations, `annual_date` and
+> `sensitive` on memories, and `forget_entities`.
+
 ## 2. Entity resolution
 
 `resolve_entity(name, kind, aliases, summary)`:
