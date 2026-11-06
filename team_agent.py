@@ -18,7 +18,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from neo4j import GraphDatabase, unit_of_work
 
-from config import LOCAL_EMBED_MODEL, NEO4J_AUTH, NEO4J_URI, chat_model
+from config import LLM_AGENT_MODEL, LOCAL_EMBED_MODEL, NEO4J_AUTH, NEO4J_URI, chat_model
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
 _embedder = None
@@ -133,7 +133,7 @@ SYSTEM = SystemMessage(
 
 
 def build_graph():
-    llm = chat_model(temperature=0).bind_tools(TOOLS)
+    llm = chat_model(LLM_AGENT_MODEL, temperature=0).bind_tools(TOOLS)
 
     def agent(state: MessagesState):
         return {"messages": [llm.invoke([SYSTEM, *state["messages"]])]}
