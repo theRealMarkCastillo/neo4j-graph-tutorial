@@ -238,4 +238,6 @@ extractor. The test is about timing, so a real LLM would only add cost and varia
 <!-- nav -->
 ---
 
+**[Part 5: Running it for real](../README.md#part-5-running-it-for-real)** (lessons 14–16)
+
 [← Lesson 13: Memory over time: expiry, decay and consolidation](13-memory-over-time.md) · [All lessons](../README.md#lessons) · [Lesson 15: Graph embeddings: who and what belong together? →](15-graph-embeddings.md)

@@ -151,4 +151,6 @@ Anyone who can reach it can read the memories. A real deployment needs at least:
 <!-- nav -->
 ---
 
+**[Part 6: Seeing and tuning it](../README.md#part-6-seeing-and-tuning-it)** (lessons 17–19)
+
 [← Lesson 16: Personas: several companions, one memory](16-personas.md) · [All lessons](../README.md#lessons) · [Lesson 18: Watching memory work, one turn at a time →](18-seeing-memory-work.md)

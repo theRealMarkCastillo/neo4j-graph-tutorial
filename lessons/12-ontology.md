@@ -304,4 +304,6 @@ test is why the `_sync_superseded_relations` backstop was deleted.
 <!-- nav -->
 ---
 
+**[Part 4: A smarter memory](../README.md#part-4-a-smarter-memory)** (lessons 12–13)
+
 [← Lesson 11: Harder scenarios, and testing memory with scenarios](11-harder-scenarios-and-evals.md) · [All lessons](../README.md#lessons) · [Lesson 13: Memory over time: expiry, decay and consolidation →](13-memory-over-time.md)

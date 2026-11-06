@@ -174,4 +174,6 @@ index start points; use `$parameters`.
 <!-- nav -->
 ---
 
+**[Part 1: Neo4j fundamentals](../README.md#part-1-neo4j-fundamentals)** (lessons 0–4)
+
 [← Lesson 2: Writing data](02-writing-data.md) · [All lessons](../README.md#lessons) · [Lesson 4: Graph algorithms (GDS) and Python →](04-graph-algorithms-and-python.md)

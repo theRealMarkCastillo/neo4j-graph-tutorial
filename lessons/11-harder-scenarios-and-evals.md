@@ -357,4 +357,6 @@ The scenarios caught two more problems after the prompt and gate changes, both w
 <!-- nav -->
 ---
 
+**[Part 3: A companion that remembers](../README.md#part-3-a-companion-that-remembers)** (lessons 8–11)
+
 [← Lesson 10: Recall, the LangGraph companion, and the terminal chat](10-companion-recall-and-chat.md) · [All lessons](../README.md#lessons) · [Lesson 12: An ontology for the life graph →](12-ontology.md)

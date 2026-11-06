@@ -25,7 +25,7 @@ then use `.venv/bin/python` wherever these docs say `uv run python`.
 Lessons 8–20 build a companion that remembers a person's life, on Neo4j. Three documents
 explain the design rather than the code:
 
-- **[Design decisions and tradeoffs](docs/design-decisions.md)**: 20 decisions (why Neo4j, why
+- **[Design decisions and tradeoffs](docs/design-decisions.md)**: 21 decisions (why Neo4j, why
   memories are sentence nodes, why recall runs every turn, why forgetting deletes...). Each
   covers what it costs, the alternatives (Postgres + pgvector, a vector DB, other graph
   databases, RDF/OWL, Mem0, Zep/Graphiti, Letta, Cognee, LangMem, Neo4j's own agent-memory
@@ -47,6 +47,10 @@ level: which sense each term has there, and the choices made, with costs and alt
 
 ## Lessons
 
+### Part 1: Neo4j fundamentals
+
+Run Neo4j, read and write with Cypher, model for performance, run graph algorithms from Python.
+
 | # | Lesson | Covers |
 |---|---|---|
 | 0 | [Setup](lessons/00-setup.md) | Docker, seed data, Python env, reset |
@@ -54,21 +58,63 @@ level: which sense each term has there, and the choices made, with costs and alt
 | 2 | [Writing data](lessons/02-writing-data.md) | `CREATE`, `MERGE`, `SET`/`REMOVE`, constraints, indexes, `UNWIND`, `DETACH DELETE` |
 | 3 | [Modeling and performance](lessons/03-modeling-and-performance.md) | Property vs node, reifying relationships, `PROFILE`, parameters, supernodes |
 | 4 | [Graph algorithms and Python](lessons/04-graph-algorithms-and-python.md) | GDS projections, PageRank, Louvain, similarity, write-back, Python driver |
+
+### Part 2: Graphs meet AI
+
+Vectors and GraphRAG, where graphs help agents, and a LangGraph agent with graph tools.
+
+| # | Lesson | Covers |
+|---|---|---|
 | 5 | [Vectors and GraphRAG](lessons/05-vectors-and-graphrag.md) | Vector indexes, local embeddings, hybrid vector + graph retrieval |
 | 6 | [Graphs in AI and agents](lessons/06-graphs-in-ai-and-agents.md) | Agent memory, graph tools, when embeddings help |
 | 7 | [LangGraph agent with graph tools](lessons/07-langgraph-agent-with-graph-tools.md) | `StateGraph`, `ToolNode`, checkpointer, read-only Cypher tool |
+
+### Part 3: A companion that remembers
+
+Design a person's memory, write it from conversation, recall it every turn, and test it with scenarios.
+
+| # | Lesson | Covers |
+|---|---|---|
 | 8 | [Memory design for companions](lessons/08-memory-design-for-companions.md) | Memory kinds, life graph, episodes, bi-temporal facts, boundaries |
 | 9 | [The memory write path](lessons/09-memory-write-path.md) | Structured extraction, entity resolution, dedupe, supersede, plans |
 | 10 | [Recall and the companion chat](lessons/10-companion-recall-and-chat.md) | Hybrid recall, LangGraph companion, terminal CLI, two-session demo |
 | 11 | [Harder scenarios and evals](lessons/11-harder-scenarios-and-evals.md) | Context-window + end-of-episode extraction, same-name people, ended relations, history, forgetting, sensitive memories, scenario tests |
+
+### Part 4: A smarter memory
+
+Give relations meaning with an ontology, and let memories expire, fade and consolidate.
+
+| # | Lesson | Covers |
+|---|---|---|
 | 12 | [An ontology for the life graph](lessons/12-ontology.md) | Relation vocabulary, synonyms, hierarchy, symmetric/inverse/cardinality/range rules, kinship inference, `(:RelType)` nodes; terms in the [glossary](docs/glossary.md) |
 | 13 | [Memory over time](lessons/13-memory-over-time.md) | Expiry (`valid_until`, status memories), decay and staleness, consolidation into habits, pruning, one testable clock |
+
+### Part 5: Running it for real
+
+Transactions and background extraction, what graph embeddings add, and several personas sharing one memory.
+
+| # | Lesson | Covers |
+|---|---|---|
 | 14 | [Production hardening](lessons/14-production-hardening.md) | One transaction per write, a user-node lock against duplicate races, background extraction, thread safety |
 | 15 | [Graph embeddings](lessons/15-graph-embeddings.md) | FastRP + kNN vs. node similarity on the life graph, Cypher projections, seeds and cut-offs |
 | 16 | [Personas](lessons/16-personas.md) | Several companions sharing one memory: private vs. shared memories, hiding derived data, per-persona diaries |
+
+### Part 6: Seeing and tuning it
+
+A web UI, a per-turn trace of what memory did, and choosing an embedding model by measuring.
+
+| # | Lesson | Covers |
+|---|---|---|
 | 17 | [A web UI](lessons/17-web-ui.md) | FastAPI + one HTML page: chat, life graph, decay curves, related entities; API tests with a fake LLM |
 | 18 | [Watching memory work](lessons/18-seeing-memory-work.md) | Per-turn trace: what recall found by retriever, the exact prompt, why each write happened, timings, persona lens, look-ahead clock, diary |
 | 19 | [Choosing an embedding model](lessons/19-choosing-an-embedding-model.md) | Compare models on your own data, query instructions, re-measure every threshold per model, vectors versioned by model, re-embed |
+
+### Part 7: Growing the graph
+
+Let the life graph expand past the user: what deserves a node, bounded multi-hop recall, edge provenance.
+
+| # | Lesson | Covers |
+|---|---|---|
 | 20 | [Growing the life graph past one hop](lessons/20-growing-the-life-graph.md) | What deserves a node, edges from the person who has the preference, bounded two-hop recall, an `exclusive` ontology rule, edge provenance, orphan cleanup, re-extracting old conversations |
 
 **Architecture:** component, LangGraph, sequence, data-model and lifecycle diagrams for the

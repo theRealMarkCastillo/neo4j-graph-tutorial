@@ -216,4 +216,6 @@ ORDER BY ep.started_at
 <!-- nav -->
 ---
 
+**[Part 3: A companion that remembers](../README.md#part-3-a-companion-that-remembers)** (lessons 8–11)
+
 [← Lesson 8: Designing memory for an AI assistant / companion](08-memory-design-for-companions.md) · [All lessons](../README.md#lessons) · [Lesson 10: Recall, the LangGraph companion, and the terminal chat →](10-companion-recall-and-chat.md)

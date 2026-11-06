@@ -159,4 +159,6 @@ uv run python -m pytest tests/test_15_graph_embeddings.py -v   # 6 tests, ~2 s, 
 <!-- nav -->
 ---
 
+**[Part 5: Running it for real](../README.md#part-5-running-it-for-real)** (lessons 14–16)
+
 [← Lesson 14: Production hardening: transactions, locks and background extraction](14-production-hardening.md) · [All lessons](../README.md#lessons) · [Lesson 16: Personas: several companions, one memory →](16-personas.md)

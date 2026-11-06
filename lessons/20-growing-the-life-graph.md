@@ -368,4 +368,6 @@ and grade what recall says a week later.
 <!-- nav -->
 ---
 
+**[Part 7: Growing the graph](../README.md#part-7-growing-the-graph)** (lesson 20)
+
 [← Lesson 19: Choosing an embedding model (and re-measuring everything that depends on it)](19-choosing-an-embedding-model.md) · [All lessons](../README.md#lessons)

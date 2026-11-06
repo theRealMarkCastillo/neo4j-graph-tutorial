@@ -310,4 +310,6 @@ little each time, which is how it found a case the fixed fake data in the unit t
 <!-- nav -->
 ---
 
+**[Part 4: A smarter memory](../README.md#part-4-a-smarter-memory)** (lessons 12–13)
+
 [← Lesson 12: An ontology for the life graph](12-ontology.md) · [All lessons](../README.md#lessons) · [Lesson 14: Production hardening: transactions, locks and background extraction →](14-production-hardening.md)

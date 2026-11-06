@@ -224,4 +224,6 @@ prompt. The pair catches both failure modes.
 <!-- nav -->
 ---
 
+**[Part 2: Graphs meet AI](../README.md#part-2-graphs-meet-ai)** (lessons 5–7)
+
 [← Lesson 4: Graph algorithms (GDS) and Python](04-graph-algorithms-and-python.md) · [All lessons](../README.md#lessons) · [Lesson 6: Graphs in AI and AI agents (concepts) →](06-graphs-in-ai-and-agents.md)

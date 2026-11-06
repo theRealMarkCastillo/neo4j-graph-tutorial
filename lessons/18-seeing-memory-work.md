@@ -281,4 +281,6 @@ A trace that is wrong teaches the wrong thing, so it gets tests like any other f
 <!-- nav -->
 ---
 
+**[Part 6: Seeing and tuning it](../README.md#part-6-seeing-and-tuning-it)** (lessons 17–19)
+
 [← Lesson 17: A web UI: chat, life graph, decay and insights on one page](17-web-ui.md) · [All lessons](../README.md#lessons) · [Lesson 19: Choosing an embedding model (and re-measuring everything that depends on it) →](19-choosing-an-embedding-model.md)

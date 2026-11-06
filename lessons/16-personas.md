@@ -152,4 +152,6 @@ same sentence without them doesn't. It passed 3/3.
 <!-- nav -->
 ---
 
+**[Part 5: Running it for real](../README.md#part-5-running-it-for-real)** (lessons 14–16)
+
 [← Lesson 15: Graph embeddings: who and what belong together?](15-graph-embeddings.md) · [All lessons](../README.md#lessons) · [Lesson 17: A web UI: chat, life graph, decay and insights on one page →](17-web-ui.md)

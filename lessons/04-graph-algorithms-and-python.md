@@ -187,4 +187,6 @@ Three driver patterns:
 <!-- nav -->
 ---
 
+**[Part 1: Neo4j fundamentals](../README.md#part-1-neo4j-fundamentals)** (lessons 0–4)
+
 [← Lesson 3: Modeling and performance](03-modeling-and-performance.md) · [All lessons](../README.md#lessons) · [Lesson 5: Vector search and GraphRAG →](05-vectors-and-graphrag.md)

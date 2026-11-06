@@ -198,4 +198,6 @@ has relationships does **not** fail when the statement runs. It fails when the t
 <!-- nav -->
 ---
 
+**[Part 1: Neo4j fundamentals](../README.md#part-1-neo4j-fundamentals)** (lessons 0–4)
+
 [← Lesson 1: Graph basics and reading data with Cypher](01-graph-basics-and-reading.md) · [All lessons](../README.md#lessons) · [Lesson 3: Modeling and performance →](03-modeling-and-performance.md)

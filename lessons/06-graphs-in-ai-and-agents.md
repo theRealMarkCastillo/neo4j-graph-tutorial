@@ -84,4 +84,6 @@ ways:
 <!-- nav -->
 ---
 
+**[Part 2: Graphs meet AI](../README.md#part-2-graphs-meet-ai)** (lessons 5–7)
+
 [← Lesson 5: Vector search and GraphRAG](05-vectors-and-graphrag.md) · [All lessons](../README.md#lessons) · [Lesson 7: A LangGraph agent with graph tools →](07-langgraph-agent-with-graph-tools.md)

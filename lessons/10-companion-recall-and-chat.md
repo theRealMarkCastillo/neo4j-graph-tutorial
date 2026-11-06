@@ -245,4 +245,6 @@ The first demo passed easy cases. [Lesson 11](11-harder-scenarios-and-evals.md) 
 <!-- nav -->
 ---
 
+**[Part 3: A companion that remembers](../README.md#part-3-a-companion-that-remembers)** (lessons 8–11)
+
 [← Lesson 9: The write path: from conversation to graph](09-memory-write-path.md) · [All lessons](../README.md#lessons) · [Lesson 11: Harder scenarios, and testing memory with scenarios →](11-harder-scenarios-and-evals.md)

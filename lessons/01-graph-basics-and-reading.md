@@ -239,4 +239,6 @@ uv run python -m pytest tests/test_01_reading.py -v
 <!-- nav -->
 ---
 
+**[Part 1: Neo4j fundamentals](../README.md#part-1-neo4j-fundamentals)** (lessons 0–4)
+
 [← Lesson 0: Setup](00-setup.md) · [All lessons](../README.md#lessons) · [Lesson 2: Writing data →](02-writing-data.md)

@@ -328,4 +328,6 @@ new ontology rule and edge provenance.
 <!-- nav -->
 ---
 
+**[Part 6: Seeing and tuning it](../README.md#part-6-seeing-and-tuning-it)** (lessons 17–19)
+
 [← Lesson 18: Watching memory work, one turn at a time](18-seeing-memory-work.md) · [All lessons](../README.md#lessons) · [Lesson 20: Growing the life graph past one hop →](20-growing-the-life-graph.md)

@@ -138,4 +138,6 @@ actually rejects a duplicate.
 <!-- nav -->
 ---
 
+**[Part 3: A companion that remembers](../README.md#part-3-a-companion-that-remembers)** (lessons 8–11)
+
 [← Lesson 7: A LangGraph agent with graph tools](07-langgraph-agent-with-graph-tools.md) · [All lessons](../README.md#lessons) · [Lesson 9: The write path: from conversation to graph →](09-memory-write-path.md)

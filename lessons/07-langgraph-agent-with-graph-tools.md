@@ -172,4 +172,6 @@ This agent forgets everything when the process ends. [Lesson 8](08-memory-design
 <!-- nav -->
 ---
 
+**[Part 2: Graphs meet AI](../README.md#part-2-graphs-meet-ai)** (lessons 5–7)
+
 [← Lesson 6: Graphs in AI and AI agents (concepts)](06-graphs-in-ai-and-agents.md) · [All lessons](../README.md#lessons) · [Lesson 8: Designing memory for an AI assistant / companion →](08-memory-design-for-companions.md)
