@@ -148,3 +148,36 @@ def test_greeting_skips_sensitive_and_protected_items(store, llm_ready):
         hello = greeting(store, WED)
         assert not re.search(r"psychiatr|appointment|Dana", hello, re.I), hello
     trials(check)
+
+
+def test_learning_a_name_renames_the_placeholder(llm_ready):
+    """From a real chat: "my son is sick" made "Riley's son"; "his name is Logan" only became a
+    memory, so the graph never showed Logan. The extractor must name the known entity."""
+    def check():
+        ex = extract("his name is Logan", "Got it. I hope Logan feels better soon.",
+                     entities=["e_5a0001: Riley's son (person, son) — Riley's son"],
+                     earlier=[("Riley", "my son is sick today"), ("Sage", "Oh no, I'm sorry to hear that.")])
+        logan = [e for e in ex.entities if e.name == "Logan"]
+        assert logan and (logan[0].ref == "e_5a0001" or "Riley's son" in logan[0].aliases), \
+            ex.model_dump_json(exclude_defaults=True)
+    trials(check)
+
+
+def test_a_name_correction_is_flagged(llm_ready):
+    def check():
+        ex = extract("oh sorry, it's Maia with an i, not Maya", "No problem, Maia it is!",
+                     entities=["e_5a0002: Maya (person, sister) — Riley's sister, a nurse in Denver"])
+        maia = [e for e in ex.entities if e.name == "Maia"]
+        assert maia and maia[0].ref == "e_5a0002" and maia[0].corrected, ex.model_dump_json(exclude_defaults=True)
+    trials(check)
+
+
+def test_a_placeholder_is_tied_to_the_named_person(llm_ready):
+    """Two known nodes, one person: the extractor must say so, so the store can merge them."""
+    def check():
+        ex = extract("oh, my sister I mentioned is Maya by the way", "Good to know!",
+                     entities=["e_5a0003: Riley's sister (person, sister) — Riley's sister",
+                               "e_5a0004: Maya (person) — a friend of Riley's from Denver"])
+        maya = [e for e in ex.entities if e.name == "Maya"]
+        assert maya and "Riley's sister" in maya[0].aliases, ex.model_dump_json(exclude_defaults=True)
+    trials(check)

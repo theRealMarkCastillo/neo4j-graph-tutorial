@@ -56,7 +56,9 @@ Ollama, LM Studio, vLLM...). Set in `.env`:
 | `LLM_TEMPERATURE` | chat temperature |
 | `COMPANION_USER`, `COMPANION_NAME` | default user and companion names |
 
-Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
+Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed. So does the
+reranker that labels unrelated recall matches (`RERANK_MODEL`, default
+`Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18). Both are downloaded once and loaded once per process.
 
 ## Files
 

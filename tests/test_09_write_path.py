@@ -167,3 +167,117 @@ def test_episode_whose_summary_failed_is_still_closed(store):
     empty = store.start_episode(on=T)
     store.end_episode(empty, None, None)
     assert store._q("MATCH (e:Episode {id:$ep}) RETURN e", ep=empty) == []
+
+
+def entities(store):
+    return {r["name"]: r for r in store._q(
+        "MATCH (e:Entity {user: $user}) WHERE NOT e:User RETURN e.id AS id, e.name AS name, e.aliases AS aliases")}
+
+
+def test_a_placeholder_is_renamed_when_the_name_is_learned(store):
+    """"My son is sick" -> "Pytest's son"; later "his name is Logan" must rename that node,
+    not leave the name only inside a memory (a real conversation found this)."""
+    store.apply(Extraction(entities=[EntityOut(name="Pytest's son", kind="person")],
+                           relations=[RelationOut(source="user", target="Pytest's son", type="son")]), today=T)
+    son = entities(store)["Pytest's son"]["id"]
+    log = store.apply(Extraction(entities=[EntityOut(name="Logan", kind="person", ref=son,
+                                                     aliases=["Pytest's son"])]), today=T)
+    assert log == ["named Pytest's son -> Logan (Pytest's son kept as an alias)"]
+    after = entities(store)
+    assert list(after) == ["Logan"] and after["Logan"]["id"] == son  # same node: its links stay
+    assert after["Logan"]["aliases"] == ["Pytest's son"]
+    assert store._lookup("Pytest's son", {}) == son  # the old name still finds him
+
+
+def test_a_placeholder_is_renamed_even_without_a_ref(store):
+    """The extractor may skip `ref` and just list the role name as an alias."""
+    store.apply(Extraction(entities=[EntityOut(name="Mom", kind="person")]), today=T)
+    store.apply(Extraction(entities=[EntityOut(name="Linda", kind="person", aliases=["Mom"])]), today=T)
+    assert {n: e["aliases"] for n, e in entities(store).items()} == {"Linda": ["Mom"]}
+
+
+def test_a_real_name_is_never_replaced(store):
+    """A role ("Mom") or a nickname ("Bob") for a named person becomes an alias only."""
+    store.apply(Extraction(entities=[EntityOut(name="Robert", kind="person")]), today=T)
+    rob = entities(store)["Robert"]["id"]
+    store.apply(Extraction(entities=[EntityOut(name="Dad", kind="person", ref=rob)]), today=T)
+    store.apply(Extraction(entities=[EntityOut(name="Bob", kind="person", ref=rob)]), today=T)
+    assert {n: sorted(e["aliases"]) for n, e in entities(store).items()} == {"Robert": ["Bob", "Dad"]}
+
+
+@pytest.mark.parametrize("name,role", [("Mom", True), ("my boss", True), ("Mark's son", True),
+                                       ("Riley’s sister", True), ("Logan", False),
+                                       ("St. Mary's Hospital", False), ("my sister Maya", False)])
+def test_what_counts_as_a_role_name(name, role):
+    from companion.store import is_role_name
+    assert is_role_name(name) is role
+
+
+# A code review after the Logan bug found four more ways the graph lost track of who's who.
+# Each test below failed before its fix.
+
+def test_a_vague_kind_is_upgraded(store):
+    """Acme saved as a 'thing' could never be worked at: works_at needs an organization."""
+    store.apply(Extraction(entities=[EntityOut(name="Acme", kind="thing")]), today=T)
+    log = store.apply(Extraction(entities=[EntityOut(name="Acme", kind="organization")],
+                                 relations=[RelationOut(source="user", target="Acme", type="works_at")]), today=T)
+    assert log == ["Acme is a organization (was thing)", "linked user -works_at-> Acme"]
+    store.apply(Extraction(entities=[EntityOut(name="Acme", kind="thing")]), today=T)  # never back down
+    assert store._q("MATCH (e:Entity {user: $user, name: 'Acme'}) RETURN e.kind AS k")[0]["k"] == "organization"
+
+
+def test_a_corrected_name_replaces_the_wrong_one(store):
+    store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person")]), today=T)
+    maya = entities(store)["Maya"]["id"]
+    log = store.apply(Extraction(entities=[EntityOut(name="Maia", kind="person", ref=maya, corrected=True)]), today=T)
+    assert log == ["named Maya -> Maia (name corrected)"]
+    assert {n: e["aliases"] for n, e in entities(store).items()} == {"Maia": ["Maya"]}
+
+
+def test_a_placeholder_and_a_named_duplicate_are_merged(store):
+    """Both nodes existed; then the extractor said they're one person."""
+    store.apply(Extraction(entities=[EntityOut(name="Pytest's sister", kind="person")],
+                           relations=[RelationOut(source="user", target="Pytest's sister", type="sister")],
+                           memories=[mem("Pytest's sister is a nurse", about=["Pytest's sister"])]), today=T)
+    store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person")],
+                           relations=[RelationOut(source="user", target="Maya", type="sister")]), today=T)
+    log = store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person", aliases=["Pytest's sister"])]), today=T)
+    assert log == ["merged Pytest's sister into Maya (the same person)"]
+    assert {n: e["aliases"] for n, e in entities(store).items()} == {"Maya": ["Pytest's sister"]}
+    rels = store._q("MATCH (:User {id: $user})-[r:RELATED]->(e) RETURN r.type AS t, e.name AS n")
+    assert rels == [{"t": "sister", "n": "Maya"}]  # one edge, not two
+    about = store._q("MATCH (m:Memory)-[:ABOUT]->(e:Entity {user: $user, name: 'Maya'}) RETURN m.text AS t")
+    assert [a["t"] for a in about] == ["Pytest's sister is a nurse"]  # the memory moved with her
+
+
+def test_one_mother_means_the_placeholder_is_her(store):
+    """'Mom' first, then 'my mother Linda' with no alias: one mother, so one node."""
+    store.apply(Extraction(entities=[EntityOut(name="Mom", kind="person")],
+                           relations=[RelationOut(source="user", target="Mom", type="mom")],
+                           memories=[mem("Pytest's mom loves gardening", kind="preference", about=["Mom"])]), today=T)
+    log = store.apply(Extraction(entities=[EntityOut(name="Linda", kind="person")],
+                                 relations=[RelationOut(source="user", target="Linda", type="mother")]), today=T)
+    assert "merged Mom into Linda (one mother)" in log
+    assert {n: e["aliases"] for n, e in entities(store).items()} == {"Linda": ["Mom"]}
+    about = store._q("MATCH (m:Memory)-[:ABOUT]->(e:Entity {user: $user, name: 'Linda'}) RETURN m.text AS t")
+    assert [a["t"] for a in about] == ["Pytest's mom loves gardening"]
+
+
+def test_siblings_and_stepparents_are_never_merged_by_role(store):
+    """Two sisters, or a mom and a stepmom, are different people."""
+    store.apply(Extraction(entities=[EntityOut(name="Pytest's sister", kind="person"), EntityOut(name="Mom", kind="person")],
+                           relations=[RelationOut(source="user", target="Pytest's sister", type="sister"),
+                                      RelationOut(source="user", target="Mom", type="mother")]), today=T)
+    store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person"), EntityOut(name="Carol", kind="person")],
+                           relations=[RelationOut(source="user", target="Maya", type="sister"),
+                                      RelationOut(source="user", target="Carol", type="stepmom")]), today=T)
+    assert set(entities(store)) == {"Pytest's sister", "Mom", "Maya", "Carol"}
+
+
+def test_an_unrelated_name_from_a_wrong_ref_is_not_kept(store):
+    """A wrong `ref` (Jordan -> Sam) must not make 'Jordan' a permanent alias of Sam."""
+    store.apply(Extraction(entities=[EntityOut(name="Sam", kind="person", summary="coworker")]), today=T)
+    sam = entities(store)["Sam"]["id"]
+    log = store.apply(Extraction(entities=[EntityOut(name="Jordan", kind="person", ref=sam)]), today=T)
+    assert log == ["kept Sam: 'Jordan' matched it by id but isn't one of its names (not added as an alias)"]
+    assert entities(store)["Sam"]["aliases"] == [] and store._lookup("Jordan", {}) is None

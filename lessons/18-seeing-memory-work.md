@@ -83,6 +83,76 @@ strength, and the event was more important. The same plan comes back through thr
 `format_context` removes the repeats before it goes in the prompt (open the **Prompt** tab to
 see them deduplicated).
 
+## What the trace found: recall that can't say "nothing"
+
+Typing **dogs** into *Try recall* for a user who never mentioned dogs still returned two
+"vector matches" about his son. Vector search returns its *nearest* memories, related or not
+(Lesson 15's kNN had the same problem). A cut-off on the vector score doesn't work with
+`bge-small`. The scores overlap:
+
+| Message | Related? | Best vector match |
+|---|---|---|
+| what do you remember about my kid? | yes | 0.740 |
+| dogs | no | 0.741 |
+| tell me a joke | no | 0.778 |
+| work was stressful | no | 0.796 |
+
+Two ideas that didn't help, measured on the same 30 messages: bge's query instruction prefix,
+and subtracting how well the message matches unrelated people's lives. Both still overlapped.
+
+**A reranker separates topical matches.** A cross-encoder (`Xenova/ms-marco-MiniLM-L-6-v2`,
+80 MB, local through fastembed, about 20 ms a message) reads the message and the memory
+*together* and scores relevance:
+
+| | Best relevance (logit) |
+|---|---|
+| every unrelated message | **≤ −9.7** (most about −11) |
+| direct questions ("where do I live?", "how's Biscuit?") | **≥ −7.6** |
+| "dogs" for Alex, who has a beagle | −5.4 |
+
+**But it can't make a leap.** The first version dropped everything below −8.5. Then the
+`sensitive` scenario failed: "I'm struggling to focus at work, my meds don't seem to help"
+scored **−10.9** against "diagnosed with ADHD and takes medication", the same as noise. So did
+"I'm nervous about Thursday" (the presentation) and "my puppy chewed my shoes" (the beagle).
+Four rerankers up to 1 GB missed the same cases, and so did combining both scores:
+
+| Message | Memory | Vector | Reranker | Related? |
+|---|---|---|---|---|
+| my meds don't seem to help | ADHD + medication | 0.758 | −10.9 | yes |
+| I'm nervous about Thursday | Thursday presentation | 0.751 | −11.3 | yes |
+| dogs (Mark has no dog) | son is sick | 0.742 | −11.0 | no |
+| work was stressful | son is sick | 0.797 | −11.2 | no |
+
+Small local models match topics; they don't reason. So recall **labels instead of dropping**.
+A match below `RELEVANCE_MIN = −8.5` is marked `weak` and sorted after the strong ones. In the
+trace it's tagged **loosely related** with its score. Typing "dogs" still shows the son's
+memories, now clearly marked as weak.
+
+**The label stays out of the prompt.** The first labelling version put weak matches under
+their own heading in the prompt: *"Loosely related (maybe not about this message)"*. Then the
+`personas` scenario failed. "Can you help me plan my training for this week?" scored −11.2
+against "signed up for the Chicago half marathon" (so did "how many miles should I run?"). The
+label told Coach to ignore its most useful memory, and Coach stopped mentioning the race. A
+label is a claim. When the scorer is often wrong, putting its verdict in the prompt spreads
+the mistake. So the prompt gets one *Relevant memories* list, strong matches first. The chat
+model can make the leap the reranker can't.
+
+The better fix is a stronger embedding model, measured on these same messages. That means
+re-embedding everything and re-measuring every threshold in this course, so it's its own change.
+
+Two more things the tests caught:
+
+- **Don't rewrite the message.** Memories are third person ("Alex lives in Portland") and
+  messages first person ("where do I live?"), so swapping "I" for the name seemed obvious. It
+  rescued some related misses but made 11 of 16 unrelated messages look relevant: "Alex's car
+  broke down" scores high against "Alex lives in Portland" on the name alone.
+- **A current status is never weak.** "What am I doing?" scored −8.9 against "Pytest is at the
+  gym", and Lesson 13's test caught it. A current status is context for any message, like
+  *Recently ended*.
+
+People, Core profile, Open plans and Past conversations aren't scored at all: they're the
+background a friend always has, whatever you just said.
+
 ## The write: decisions with reasons — [`companion/store.py`](../companion/store.py)
 
 Before this lesson the log said *what* happened (`reinforced m_ab12`). Now each decision says
@@ -158,6 +228,9 @@ A trace that is wrong teaches the wrong thing, so it gets tests like any other f
 - the second mention is `reinforced` with its similarity, the old memory was a candidate, and
   Miso is highlighted;
 - small talk shows *skipped* and why;
+- (in [`test_10_recall.py`](../tests/test_10_recall.py)) "do you like pizza?" gets only
+  weak matches; "my dog hates storms" keeps the dog on top; "my meds don't help" still reaches
+  the ADHD memory in the prompt, though the reranker scored it weak;
 - the recall preview doesn't change `access_count`;
 - looking 90 days ahead halves an event's strength and expires "tired today", without writing anything;
 - the persona lens hides Sage's private Dr. Lee from Coach;
@@ -173,6 +246,10 @@ A trace that is wrong teaches the wrong thing, so it gets tests like any other f
 - Every decision should carry its **reason and its number**. Thresholds stop being magic once
   you can see a 0.971 that just missed.
 - Inspection must be **read-only**: a preview that bumps access counts changes what it measures.
+- Vector search can't say "nothing found". Measure related vs unrelated scores before picking a
+  cut-off. When the signals overlap, **don't drop, and don't tell the model either**: hiding a
+  related memory, or calling it unrelated, costs more than showing a weak one to a model that
+  can judge it. Show the score where a person reads it (the trace).
 
 ## Next
 

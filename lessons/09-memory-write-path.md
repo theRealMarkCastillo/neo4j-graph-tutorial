@@ -50,6 +50,34 @@ person in a boundary's `about`.
 Then aliases are merged (`apoc.coll.toSet`) and the embedding refreshed. Names used in
 memories/relations are looked up but **never auto-created**, which avoids junk nodes.
 
+**Placeholders get renamed.** Someone mentioned without a name gets a role name: "my son is
+sick" makes `Mark's son`. When the name comes later ("his name is Logan"), the extractor
+returns `Logan` with `ref` pointing at that node. The store then renames it: `Logan` becomes the
+name and `Mark's son` an alias, on the **same node**, so its relations and memories stay
+attached. It only renames when the old name is a role and the new one isn't. `is_role_name()`
+strips "my " or "X's " and asks the ontology whether the rest is a relation type ("son",
+"mom" → mother, "boss" → manager). A role or a nickname for someone already named ("Dad" or
+"Bob" for Robert) only becomes an alias:
+
+```
+named Mark's son -> Logan (Mark's son kept as an alias)
+```
+
+**Who's who, over time.** One person can enter the graph several ways, so `resolve_entity`
+also reconciles what it finds. Each case below came from a code review after the Logan bug,
+and was reproduced before it was fixed:
+
+| Situation | What happens | Log |
+|---|---|---|
+| A name is corrected ("it's Maia, not Maya") | the extractor sets `corrected=true`; the right name replaces the wrong one | `named Maya -> Maia (name corrected)` |
+| A placeholder and a named node turn out to be one person | the extractor lists the role name as an alias; `merge_entities` moves relations and memories onto the named node and deletes the other | `merged Pytest's sister into Maya (the same person)` |
+| "Mom" exists, then "my mother Linda" with no alias | someone has one mother (father, partner, spouse), so a role-named one is Linda. Never for sisters, sons or a stepmom | `merged Mom into Linda (one mother)` |
+| Saved as a `thing`, later an `organization` | the kind upgrades (never downgrades), so `works_at` stops being rejected | `Acme is a organization (was thing)` |
+| The extractor points "Jordan" at Sam | not kept as an alias: a different name is more likely a wrong `ref` than a nickname, and an alias would send every later "Jordan" to Sam. Roles ("Dad") and close names ("Bob" ~ "Robert") are kept | `kept Sam: 'Jordan' matched it by id but isn't one of its names` |
+
+Merges only ever absorb a **role-named** node. Two nodes that both have real names stay apart,
+because two Sams may really be two people (Lesson 11's `same_name` scenario).
+
 ## 3. Dedupe, supersede, retire
 
 | Situation | What happens |
@@ -123,6 +151,11 @@ A code review of the write path produced regression tests. Each one failed befor
   same fact again. A tombstone (the embedding only, no text) now blocks it for that episode;
 - vector searches filtered by user *after* taking the top 5, so other users' memories could
   crowd out the real duplicate. Now they take 50, filter, then keep the top k.
+- "his name is Logan" never reached the graph. The node stayed `Mark's son`: a known entity
+  matched by `ref` kept its old name, and the new name wasn't even added as an alias. Found in a
+  real chat; the three `placeholder`/`real_name` tests cover it.
+- the review that followed found the five cases in the table above. Breaking each fix on purpose
+  makes exactly its own test fail (a mutation check).
 
 `apply()` runs several small transactions, not one. If something fails halfway, the graph is
 left half-updated. That's acceptable for a tutorial, but production code would wrap each

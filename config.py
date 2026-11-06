@@ -12,6 +12,8 @@ NEO4J_AUTH = (os.getenv("NEO4J_USER", "neo4j"), os.environ["NEO4J_PASSWORD"])
 # Local embedding model (no API key needed). 384-dimensional vectors.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 EMBED_DIMS = 384
+# Lesson 18: a cross-encoder that judges whether a recalled memory is about the message at all
+RERANK_MODEL = os.getenv("RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
 
 # One OpenAI-compatible chat endpoint for every lesson that calls an LLM (5, 7-12):
 # OpenAI, DeepInfra, OpenRouter, Ollama, LM Studio, vLLM...

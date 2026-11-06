@@ -14,6 +14,7 @@ class EntityOut(BaseModel):
     summary: str = Field(default="", description="One short line describing it, e.g. 'the user's cousin, lives in Ohio'")
     ref: str | None = Field(default=None, description="id of the KNOWN entity this is (e.g. 'e_1a2b3c'), or null if it is not known yet")
     new: bool = Field(default=False, description="true if this is a DIFFERENT entity that shares a name with a known one (e.g. a second Sam)")
+    corrected: bool = Field(default=False, description="true if the user CORRECTED the name of the known entity in `ref` ('actually it's Maia, not Maya')")
 
 
 class RelationOut(BaseModel):

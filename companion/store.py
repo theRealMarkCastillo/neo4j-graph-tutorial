@@ -16,12 +16,13 @@ import numpy as np
 
 from fastembed import TextEmbedding
 
-from config import COMPANION_NAME, EMBED_MODEL
+from config import COMPANION_NAME, EMBED_MODEL, RERANK_MODEL
 from companion import clock, decay, ontology
 from companion.models import Extraction
 from companion.schema import ensure_schema
 
 _embedder: TextEmbedding | None = None
+_reranker = None
 _ontology_loaded = False
 
 
@@ -31,12 +32,33 @@ def embed(texts: list[str]) -> list[list[float]]:
     return [v.tolist() for v in _embedder.embed(texts)]
 
 
+def relevance(query: str, texts: list[str]) -> list[float]:
+    """How much each text is ABOUT the query, from a cross-encoder (Lesson 18). Unlike an
+    embedding, it reads the two together, so "dogs" vs "Mark's son is sick" scores near the
+    floor (about -11) while "dogs" vs "Alex has a beagle" scores -5. Logits, not 0-1."""
+    global _reranker
+    if not texts:
+        return []
+    if _reranker is None:
+        from fastembed.rerank.cross_encoder import TextCrossEncoder
+        _reranker = TextCrossEncoder(RERANK_MODEL)
+    return [float(s) for s in _reranker.rerank(query, texts)]
+
+
 def _name_similarity(a: list[str], b: list[str]) -> float:
     """Best cosine similarity between any name/alias in `a` and any in `b`."""
     va, vb = np.array(embed(a)), np.array(embed(b))
     va /= np.linalg.norm(va, axis=1, keepdims=True)
     vb /= np.linalg.norm(vb, axis=1, keepdims=True)
     return float((va @ vb.T).max())
+
+
+def _similar_names(name: str, known: list[str]) -> bool:
+    """Another way to say a known name: "Bob" ~ "Robert", "Robert" in "Robert Smith"."""
+    words = lambda n: set(re.findall(r"\w+", n.lower()))
+    if any(words(name) <= words(k) or words(k) <= words(name) for k in known):
+        return True
+    return _name_similarity([name], known) >= NAME_MATCH_MIN
 
 
 def _clusters(rows: list[dict], min_sim: float, min_size: int) -> list[list[dict]]:
@@ -103,6 +125,14 @@ NAME_MATCH_MIN = 0.80
 # Sensitive memories (health, finances...) are recalled only when the message is clearly about
 # them: (near) the best vector match for this message, not just above a fixed score. Small
 # embedding models squeeze all scores into a narrow band (~0.63-0.80 here), so relative wins.
+# Vector search always returns its nearest memories, related or not: with bge-small, "dogs"
+# scored 0.74 against "Mark's son is sick" and "what do you remember about my kid?" 0.74
+# against the right memory, so no vector cut-off works. A cross-encoder separates topical
+# matches (unrelated messages <= -9.7, direct questions >= -7.6) but NOT inferential ones:
+# "my meds don't help" vs the ADHD memory scored -10.9, like noise. So weak matches are
+# never dropped: the chat model can make the leap. They're labelled in the web UI's trace only
+# (in the prompt the label misled the model too: see format_context).
+RELEVANCE_MIN = -8.5
 SENSITIVE_MARGIN = 0.01
 SENSITIVE_FLOOR = 0.72
 
@@ -128,6 +158,20 @@ def entity_visible(e: str) -> str:
     return (f"(EXISTS {{ MATCH ({e})<-[:ABOUT]-(vm:Memory) WHERE {visible('vm')} }}"
             f" OR EXISTS {{ MATCH ()-[vr:RELATED]-({e}) WHERE {visible('vr')} }}"
             f" OR NOT EXISTS {{ MATCH ({e})<-[:ABOUT|RELATED]-() }})")
+
+def one_person_roles() -> set[str]:
+    """Relations to exactly one person at a time: mother, father, and the "one at a time"
+    person types in the ontology (partner, spouse)."""
+    return {"mother", "father"} | {t for t, spec in ontology.ONTOLOGY.items()
+                                   if spec.get("cardinality") == "one" and "person" in (spec.get("range") or [])}
+
+
+def is_role_name(name: str) -> bool:
+    """A placeholder for someone whose name isn't known yet: "Mom", "my boss", "Mark's son".
+    The rest, after any "my " or "X's ", must be a relation type or synonym in the ontology."""
+    rest = re.sub(r"^(my|the|his|her|their)\s+|^.+?['’]s\s+", "", name.strip(), flags=re.I)
+    return ontology.normalize(rest)[1] in ("exact", "synonym")
+
 
 def _annual(md: str | None) -> str | None:
     return md if md and re.fullmatch(r"\d{2}-\d{2}", md) else None
@@ -158,6 +202,7 @@ class MemoryStore:
         # extraction in a background thread, the chat thread's recall must not run its
         # queries inside the worker's open transaction.
         self._local = threading.local()
+        self.entity_log: list[str] = []  # renames, merges, kind changes (see resolve_entity)
         ensure_schema(driver)
         global _ontology_loaded
         if not _ontology_loaded:
@@ -271,7 +316,7 @@ class MemoryStore:
         return name.strip().lower() in {"user", "me", "i", self.user, self.user_name.lower()}
 
     def resolve_entity(self, name: str, kind: str = "thing", aliases=(), summary: str = "",
-                       ref: str | None = None, new: bool = False) -> str:
+                       ref: str | None = None, new: bool = False, corrected: bool = False) -> str:
         """Find-or-create an entity.
 
         1. `ref` — the extractor pointed at a known entity id
@@ -279,20 +324,31 @@ class MemoryStore:
         3. exact name/alias; if several share the name, the one whose summary is most similar
         4. embedding similarity (same kind) above ENTITY_MATCH_SCORE
         5. otherwise create it
+
+        Then, for a known entity (each change is logged in self.entity_log):
+        - the name: a real name replaces a role ("Mark's son" -> "Logan"), and `corrected`
+          replaces a wrong one ("Maya" -> "Maia"); the old name stays as an alias
+        - another name: kept as an alias only if it's a role ("Dad") or close to a known name
+          ("Bob" ~ "Robert"). A different name ("Jordan" for Sam) is more likely a wrong `ref`
+          than a nickname, and an alias would send every later "Jordan" to Sam.
+        - the kind: "thing" upgrades to anything more specific, never the other way
+        - a role-named duplicate ("Pytest's sister") listed in `aliases` is merged into it
         """
         if self._is_user(name):
             return self.user
         vec = embed([f"{name} ({kind}): {summary}"])[0]
         hit = self._q("MATCH (e:Entity {id: $id, user: $user}) RETURN e.id AS id", id=ref) if ref else []
+        names = [n.lower() for n in [name, *aliases]]
         if not hit and not new:
-            names = [n.lower() for n in [name, *aliases]]
             hit = self._q(
                 """
                 MATCH (e:Entity {user: $user}) WHERE e.kind <> 'self'
                   AND (toLower(e.name) IN $names OR any(a IN coalesce(e.aliases, []) WHERE toLower(a) IN $names))
-                RETURN e.id AS id ORDER BY vector.similarity.cosine(e.embedding, $vec) DESC LIMIT 1
+                // a real name before a placeholder that merely lists it
+                RETURN e.id AS id ORDER BY CASE WHEN toLower(e.name) = $name THEN 0 ELSE 1 END,
+                       vector.similarity.cosine(e.embedding, $vec) DESC LIMIT 1
                 """,
-                names=names, vec=vec,
+                names=names, name=name.lower(), vec=vec,
             )
         if not hit and not new:
             candidates = self._q(
@@ -304,18 +360,93 @@ class MemoryStore:
                 vec=vec, kind=kind, min=ENTITY_MATCH_SCORE,
             )
             hit = [c for c in candidates if _name_similarity([name, *aliases], c["names"]) >= NAME_MATCH_MIN][:1]
-        entity_id = hit[0]["id"] if hit else _new_id("e")
+        if not hit:  # a new entity: nothing to reconcile
+            entity_id = _new_id("e")
+            self._q(
+                """
+                CREATE (e:Entity {id: $id, user: $user, name: $name, kind: $kind, summary: $summary,
+                                  aliases: [a IN apoc.coll.toSet($aliases) WHERE toLower(a) <> toLower($name)],
+                                  created_at: datetime(), updated_at: datetime()})
+                WITH e CALL db.create.setNodeVectorProperty(e, 'embedding', $vec)
+                """,
+                id=entity_id, name=name, kind=kind, summary=summary, aliases=list(aliases), vec=vec,
+            )
+            return entity_id
+
+        entity_id = hit[0]["id"]
+        cur = self._q("MATCH (e:Entity {id: $id}) RETURN e.name AS name, e.kind AS kind, "
+                      "coalesce(e.aliases, []) AS aliases, coalesce(e.summary, '') AS summary", id=entity_id)[0]
+        known = [cur["name"], *cur["aliases"]]
+        differs = name.lower() not in {k.lower() for k in known}
+        rename = name.lower() != cur["name"].lower() and not is_role_name(name) and (
+            is_role_name(cur["name"]) or (corrected and bool(ref)))
+        keep_name = rename or not differs or is_role_name(name) or _similar_names(name, known)
+        if rename:
+            how = "name corrected" if corrected and not is_role_name(cur["name"]) else f"{cur['name']} kept as an alias"
+            self.entity_log.append(f"named {cur['name']} -> {name} ({how})")
+        elif differs and not keep_name:
+            self.entity_log.append(f"kept {cur['name']}: '{name}' matched it by id but isn't one of its names "
+                                   "(not added as an alias)")
+        new_kind = kind if cur["kind"] == "thing" and kind != "thing" else cur["kind"]
+        if new_kind != cur["kind"]:
+            self.entity_log.append(f"{cur['name'] if not rename else name} is a {new_kind} (was {cur['kind']})")
+        final = name if rename else cur["name"]
+        final_summary = summary or cur["summary"]
         self._q(
             """
-            MERGE (e:Entity {id: $id})
-            ON CREATE SET e.user = $user, e.name = $name, e.kind = $kind, e.created_at = datetime()
-            SET e.updated_at = datetime(), e.aliases = [a IN apoc.coll.toSet(coalesce(e.aliases, []) + $aliases) WHERE toLower(a) <> toLower(e.name)],
-                e.summary = CASE WHEN $summary <> '' THEN $summary ELSE e.summary END
+            MATCH (e:Entity {id: $id})
+            SET e.name = $final, e.kind = $kind, e.summary = $summary, e.updated_at = datetime(),
+                e.aliases = [a IN apoc.coll.toSet(coalesce(e.aliases, []) + $aliases + $before + $incoming)
+                             WHERE toLower(a) <> toLower($final)]
             WITH e CALL db.create.setNodeVectorProperty(e, 'embedding', $vec)
             """,
-            id=entity_id, name=name, kind=kind, aliases=list(aliases), summary=summary, vec=vec,
+            id=entity_id, final=final, kind=new_kind, summary=final_summary,
+            aliases=list(aliases), before=[cur["name"]], incoming=[name] if keep_name else [],
+            vec=embed([f"{final} ({new_kind}): {final_summary}"])[0],
         )
+        # A placeholder the extractor now says is this entity ("Maya", aliases ["Pytest's sister"]):
+        # one person, so one node. Only role-named ones: two real "Sam"s may be two people.
+        for dup in self._q(
+            """
+            MATCH (e:Entity {user: $user}) WHERE e.id <> $id AND NOT e:User AND toLower(e.name) IN $names
+            RETURN e.id AS id, e.name AS name
+            """,
+            id=entity_id, names=[a.lower() for a in aliases],
+        ):
+            if is_role_name(dup["name"]):
+                self.merge_entities(entity_id, dup["id"])
+                self.entity_log.append(f"merged {dup['name']} into {final} (the same {kind})")
         return entity_id
+
+    def merge_entities(self, keep: str, drop: str) -> None:
+        """Move everything from `drop` onto `keep`, then delete `drop`: relations both ways
+        (an existing edge of the same type absorbs the other, current wins over ended),
+        memories ABOUT it, and its names as aliases."""
+        self._q(
+            """
+            MATCH (keep:Entity {id: $keep, user: $user}), (drop:Entity {id: $drop, user: $user})
+            CALL (keep, drop) {
+              MATCH (drop)-[r:RELATED]->(x) WHERE x <> keep
+              MERGE (keep)-[n:RELATED {type: r.type}]->(x)
+              ON CREATE SET n = properties(r)
+              ON MATCH SET n.until = CASE WHEN r.until IS NULL OR n.until IS NULL THEN null ELSE n.until END
+            }
+            CALL (keep, drop) {
+              MATCH (x)-[r:RELATED]->(drop) WHERE x <> keep
+              MERGE (x)-[n:RELATED {type: r.type}]->(keep)
+              ON CREATE SET n = properties(r)
+              ON MATCH SET n.until = CASE WHEN r.until IS NULL OR n.until IS NULL THEN null ELSE n.until END
+            }
+            CALL (keep, drop) {
+              MATCH (m:Memory)-[:ABOUT]->(drop) MERGE (m)-[:ABOUT]->(keep)
+            }
+            SET keep.aliases = [a IN apoc.coll.toSet(coalesce(keep.aliases, []) + [drop.name] + coalesce(drop.aliases, []))
+                                WHERE toLower(a) <> toLower(keep.name)],
+                keep.summary = CASE WHEN coalesce(keep.summary, '') = '' THEN drop.summary ELSE keep.summary END
+            DETACH DELETE drop
+            """,
+            keep=keep, drop=drop,
+        )
 
     def _lookup(self, name: str, known: dict[str, str]) -> str | None:
         """Map a name or id used in a memory/relation to an entity id without creating junk nodes.
@@ -356,14 +487,17 @@ class MemoryStore:
         known: dict[str, str] = {}
         self.forgotten_terms: list[str] = []  # names forgotten by this call (the graph redacts its thread)
         self.written_ids: list[str] = []      # memories created or reinforced by this call
+        self.entity_log = []
         for ent in ex.entities:
-            eid = self.resolve_entity(ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new)
+            eid = self.resolve_entity(ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new,
+                                      ent.corrected)
             for n in [ent.name, *ent.aliases, *([ent.ref] if ent.ref else [])]:
                 if known.get(n.lower(), eid) != eid:  # two different Sams in one extraction
                     log.append(f"warning: '{n}' names two entities here; references to it go to the last one")
                 known[n.lower()] = eid
             if ent.new and not ent.ref:
                 log.append(f"new entity {ent.name} ({eid}), distinct from the known {ent.name}")
+        log += self.entity_log
 
         # Relations go through the ontology: normalize the type, check its range, then apply
         # its rules (cardinality "one" ends the previous edge; "ended" ends the whole lineage).
@@ -404,6 +538,21 @@ class MemoryStore:
                            a=a, b=b)[0]
             src, dst = ("user" if a == self.user else info["a"]), info["b"]
             said = f" (said '{rel.type}')" if how in ("synonym", "flipped") else ""
+            if not rel.ended and a == self.user and canon in one_person_roles() and not is_role_name(dst):
+                # "Mom" first, "my mother Linda" later, and the extractor didn't say they're the
+                # same: someone has one mother (or partner), so a role-named one IS Linda.
+                for y in q(
+                    """
+                    MATCH (:User {id: $user})-[r:RELATED]->(y:Entity) WHERE y.id <> $b AND r.until IS NULL
+                      AND r.type IN $types AND NOT toLower(coalesce(r.said, '')) CONTAINS 'step'
+                    RETURN y.id AS id, y.name AS name
+                    """,
+                    b=b, types=sorted(ontology.lineage(canon) | {canon}),
+                ):
+                    if is_role_name(y["name"]) and "step" not in rel.type.lower():
+                        self.merge_entities(b, y["id"])
+                        known = {k: (b if v == y["id"] else v) for k, v in known.items()}
+                        log.append(f"merged {y['name']} into {dst} (one {canon})")
             if rel.ended:  # breakup, moved away, left a job: keep the edge as history
                 ended = q(
                     """
@@ -689,15 +838,23 @@ class MemoryStore:
         dormant = [{"id": m["id"], "kind": m["kind"], "text": m["text"], "score": m["score"],
                     "strength": round(decay.strength(m["importance"], m["kind"], m["age"]), 3)}
                    for m in semantic if decay.is_dormant(m["importance"], m["kind"], m["age"])]
+        semantic = [m for m in semantic if not decay.is_dormant(m["importance"], m["kind"], m["age"])]
+        # Relevance (Lesson 18): mark what the vector search returned only because it had to
+        # return something. Weak matches go after strong ones and are labelled in the prompt.
+        # A current status ("at the gym" until 14:00) is never weak: it's context for any
+        # message, like "Recently" below ("what am I doing?" scored -8.9 against it).
+        for m, r in zip(semantic, relevance(query, [m["text"] for m in semantic])):
+            m["relevance"] = round(r, 2)
+            m["weak"] = r < RELEVANCE_MIN and m["kind"] != "status"
         semantic = sorted(
             ({**m, "rank": round(decay.rank(m["score"], m["importance"], m["kind"], m["age"]), 3),
-              "stale": decay.is_stale(m["kind"], m["age"])}
-             for m in semantic if not decay.is_dormant(m["importance"], m["kind"], m["age"])),
-            key=lambda m: -m["rank"])[:k]
+              "stale": decay.is_stale(m["kind"], m["age"])} for m in semantic),
+            key=lambda m: (m["weak"], -m["rank"]))[:k]
         # History ("where did I live before?"): embeddings can't express "before", so walk the
         # graph instead — older versions of the best-matching current memories.
-        top = max((m["score"] for m in semantic), default=0)
-        best = [m["id"] for m in sorted(semantic, key=lambda m: -m["score"])[:3] if m["score"] >= top - 0.02]
+        strong = [m for m in semantic if not m["weak"]]  # no history for a match that isn't about this
+        top = max((m["score"] for m in strong), default=0)
+        best = [m["id"] for m in sorted(strong, key=lambda m: -m["score"])[:3] if m["score"] >= top - 0.02]
         history = q(
             """
             MATCH (cur:Memory)-[:SUPERSEDES*1..3]->(m:Memory) WHERE cur.id IN $ids AND """ + NOT_PROTECTED + """
@@ -809,7 +966,7 @@ class MemoryStore:
             ORDER BY ep.started_at DESC LIMIT 3
             """
         )
-        touched = [m["id"] for m in semantic] + [m["id"] for e in entities for m in e["memories"]]
+        touched = [m["id"] for m in semantic if not m["weak"]] + [m["id"] for e in entities for m in e["memories"]]
         if touch:
             q(
             """
@@ -818,7 +975,7 @@ class MemoryStore:
                 """,
                 ids=touched,
             )
-        return {"dormant": dormant, "core": core, "semantic": semantic, "entities": entities, "people": people,
+        return {"dormant": dormant, "relevance_min": RELEVANCE_MIN, "core": core, "semantic": semantic, "entities": entities, "people": people,
                 "followups": followups, "upcoming": upcoming, "history": history, "episodes": episodes,
                 "recent": recent}
 
@@ -1074,6 +1231,9 @@ def format_context(r: dict, today: dt.date | None = None) -> str:
         out.append("Yearly dates coming up:\n" + "\n".join(
             f"- {m['on'].isoformat()}: {m['text']}" + (SENSITIVE_NOTE if m.get("sensitive") else "")
             for m in r["upcoming"]))
+    # Weak matches stay in this list, after the strong ones, with no label: the reranker
+    # misses inferential links ("plan my training" vs the half marathon: -11.2), so a "maybe
+    # unrelated" label told the model to ignore its best memory (the personas scenario).
     seen = {m["text"] for m in r["core"] + r["followups"]}
     relevant = [m for m in r["semantic"] if m["text"] not in seen]
     for e in r["entities"]:

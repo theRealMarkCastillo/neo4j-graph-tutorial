@@ -73,7 +73,14 @@ Rules:
 10. Entities: people, pets, places and organizations go in `entities`. For a KNOWN entity set
    `ref` to its id. Someone who shares a name with a known entity but is clearly different
    (coworker Sam vs cousin Sam): new=true plus a distinguishing summary. Unnamed people get a
-   role name ("Mom", "Riley's boss"). In `about`, `source` and `target` use the known id when
+   role name ("Mom", "Riley's boss"). When {user} later gives a role-named entity its real name ("his
+   name is Logan"), output the entity with the real name, `ref` set to the known id and the
+   role name in `aliases`: the graph renames it. The name must not only go into a memory.
+   If {user} CORRECTS a known name ("it's Maia, not Maya"), output the entity with the right
+   name, `ref` to the known id and corrected=true. If a role-named known entity turns out to
+   be a named one ("Riley's sister" is Maya), output the named one with `ref` and the role
+   name in `aliases`: the two are merged. Use the most specific kind (a company is an
+   organization, not a thing). In `about`, `source` and `target` use the known id when
    two entities share a name.
 11. Relations: links to {user} or between entities. Direction: source -type-> target means
    "target is source's <type>": user -sister-> Maya (Maya is {user}'s sister);

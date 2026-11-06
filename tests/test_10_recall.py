@@ -55,6 +55,30 @@ def test_semantic_recall_finds_the_right_memory(life):
     assert "Pytest's sister Maya is a nurse in Denver" in texts
 
 
+def test_an_unrelated_message_gets_only_loosely_related_memories(life):
+    """Vector search always returns its nearest memories: "do you like pizza?" still scores
+    about 0.7 against the dog and the sister (found in the web UI). The reranker labels them
+    for the trace. They're not dropped: inferential matches score just as low."""
+    r = life.recall("do you like pizza?", today=T)
+    assert r["semantic"] and all(x["weak"] and x["relevance"] < -8.5 for x in r["semantic"])
+
+
+def test_a_related_message_keeps_its_match_on_top(life):
+    r = life.recall("my dog hates storms", today=T)
+    top = r["semantic"][0]
+    assert top["text"] == "Pytest's dog Rex is afraid of thunderstorms" and not top["weak"]
+
+
+def test_an_inferential_match_is_kept_even_when_the_reranker_misses_it(store):
+    """"My meds don't help" -> the ADHD memory: the reranker scores it like noise (-10.9),
+    so dropping weak matches would hide exactly this (the sensitive scenario caught it)."""
+    store.apply(Extraction(memories=[m("Pytest was diagnosed with ADHD in 2025 and takes medication for it",
+                                       sensitive=True)]), today=T)
+    r = store.recall("I'm struggling to focus at work, my meds don't seem to help", today=T)
+    assert "ADHD" in format_context(r, T)
+    assert r["semantic"][0]["weak"]  # the reranker did miss it: only the vector search found it
+
+
 def test_boundaries_are_always_in_core(life):
     r = life.recall("what should I cook tonight?", today=T)
     assert any("doesn't want to talk about their job" in x["text"] for x in r["core"])

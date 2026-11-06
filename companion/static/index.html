@@ -208,8 +208,8 @@ function refresh() {
 const SOURCES = [
   ["core", "Core profile", "always included: every boundary, plus the most important facts and preferences",
     m => `[${m.kind}] ${m.text}${m.stale ? " · may be out of date" : ""}`],
-  ["semantic", "Vector matches", "nearest memories to the message, re-ranked: match × importance × decay",
-    m => `[${m.kind}] ${m.text} <span class="score">match ${m.score} → rank ${m.rank}</span>`],
+  ["semantic", "Vector matches", "nearest memories, re-ranked by match × importance × decay; a reranker labels the ones that aren't about this message",
+    m => `${m.weak ? '<span class="chip">loosely related</span> ' : ""}[${m.kind}] ${m.text} <span class="score">match ${m.score}, relevance ${m.relevance}${m.weak ? " &lt; " + RELEVANCE_HINT : ""} → rank ${m.rank}</span>`],
   ["entities", "Graph hop", "people and things named (or meant) in the message, and their memories",
     e => `<b>${esc(e.name)}</b> <span class="dim">${esc(e.relation || e.kind)}</span>` +
          (e.memories.length ? "<br>" + e.memories.map(m => "· " + esc(m.text)).join("<br>") : ""), true],
@@ -220,13 +220,15 @@ const SOURCES = [
   ["people", "People", "everyone currently related to the user", p => `${esc(p.name)} <span class="dim">(${esc(p.relation)})</span>`, true],
   ["episodes", "Past conversations", "the last diary summaries", e => `${String(e.at).slice(0, 10)}: ${esc(e.summary)}`, true],
 ];
+let RELEVANCE_HINT = "-8.5";
 function recallHtml(found) {
+  if (found.relevance_min != null) RELEVANCE_HINT = String(found.relevance_min);
   let html = "", empty = [];
   for (const [key, title, why, fmt, raw] of SOURCES) {
     const items = found[key] || [];
     if (!items.length) { empty.push(`<span title="${esc(why)}">${title}</span>`); continue; }
     html += `<h3>${title} <span class="chip">${items.length}</span> <span class="why">— ${why}</span></h3>`;
-    html += `<ul class="items">${items.map(m => `<li class="keep">${raw ? fmt(m) : fmt({...m, text: esc(m.text)})}</li>`).join("")}</ul>`;
+    html += `<ul class="items">${items.map(m => `<li class="${m.weak ? "drop" : "keep"}">${raw ? fmt(m) : fmt({...m, text: esc(m.text)})}</li>`).join("")}</ul>`;
   }
   if (empty.length) html += `<p class="hint">Found nothing: ${empty.join(", ")}.</p>`;
   const dormant = found.dormant || [];
