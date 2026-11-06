@@ -61,3 +61,9 @@ def chat_model(model: str | None = None, temperature: float | None = None):
         timeout=120,
         max_retries=2,
     )
+
+
+# Optional MLflow tracing (observability.py): on only when MLFLOW_TRACKING_URI is set.
+import observability  # noqa: E402
+
+observability.setup()

@@ -30,6 +30,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from config import chat_model
+import observability
 from companion import clock
 from companion.worker import Background
 from companion.extract import extract_episode, extract_memories, find_pattern, line, summarize_episode
@@ -118,6 +119,9 @@ def build_companion(store: MemoryStore, background: Background | None = None,
 
     def recall(state: CompanionState, config: RunnableConfig):
         query = state["messages"][-1].content
+        # MLflow (optional): group this turn's trace with the rest of the conversation
+        observability.tag_trace(user=store.user, session=config["configurable"]["thread_id"],
+                                persona=store.agent)
         started = time.perf_counter()
         found = store.recall(query, today=_today(config))
         if trace is not None:
@@ -176,6 +180,16 @@ def build_companion(store: MemoryStore, background: Background | None = None,
                                   "queued_at": time.time()}
 
         def job() -> list[str]:
+            # Its own trace when it runs on the background worker: the turn's trace has
+            # already finished by then. Inline (--sync), it nests inside the turn's trace.
+            with observability.span("remember", inputs={"message": said, "episode": episode_id}) as sp:
+                observability.tag_trace(user=store.user, session=episode_id, persona=store.agent)
+                log = extract_and_store()
+                if sp is not None:
+                    sp.set_outputs(log)
+                return log
+
+        def extract_and_store() -> list[str]:
             started = time.perf_counter()
             # Candidates are read INSIDE the job: queued jobs run in order, so this one sees
             # what the previous one wrote.

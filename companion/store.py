@@ -15,6 +15,7 @@ from functools import partial
 import numpy as np
 
 from config import COMPANION_NAME, RERANK_MODEL
+from observability import traced
 from companion import clock, decay, ontology
 from companion.embeddings import PROFILE, embed, embed_for_clustering  # Lesson 19: local or remote, with its thresholds
 from companion.models import Extraction
@@ -474,6 +475,7 @@ class MemoryStore:
         Boundaries are never private: a boundary set with one persona protects with all."""
         return mem.kind != "boundary" and (mem.private or mem.sensitive)
 
+    @traced("store.apply", "CHAIN")
     def apply(self, ex: Extraction, episode_id: str | None = None, today: dt.date | None = None) -> list[str]:
         """Store one extraction, all or nothing (one transaction). Returns a log of what changed."""
         return self._write(lambda: self._apply(ex, episode_id, today))
@@ -777,6 +779,7 @@ class MemoryStore:
         return log
 
     # ------------------------------------------------------------------ read path
+    @traced("store.extraction_candidates", "RETRIEVER")
     def extraction_candidates(self, text: str, k: int = 10, episode_id: str | None = None,
                               today: dt.date | None = None) -> list[dict]:
         """Existing current memories the extractor may update or retire, with their ids:
@@ -845,6 +848,7 @@ class MemoryStore:
         return [{**f, **rows[f["id"]], "via_name": rows[f["via"]]["name"]}
                 for f in found if f["id"] in rows and f["via"] in rows]
 
+    @traced("store.recall", "RETRIEVER")
     def recall(self, query: str, k: int = 8, today: dt.date | None = None, touch: bool = True) -> dict:
         """What the companion knows that's relevant to `query`. `touch=False` only looks
         (the web UI's preview): it doesn't count as an access."""

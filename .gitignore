@@ -6,3 +6,7 @@ __pycache__/
 # fastembed model cache
 local_cache/
 .cache/
+# local MLflow server (observability.py)
+mlflow.db
+mlartifacts/
+mlruns/

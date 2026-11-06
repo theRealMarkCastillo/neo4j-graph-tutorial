@@ -165,6 +165,7 @@ default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding 
 | `pyproject.toml`, `uv.lock`, `.python-version` | Dependencies, the exact tested versions, the Python version (`uv sync`) |
 | `requirements.txt` | The same pinned versions for pip, generated from `uv.lock` |
 | `config.py` | Loads `.env` for the scripts |
+| `observability.py` | Optional MLflow tracing and eval logging (see *Tests and evals*) |
 | `seed/00_seed.cypher` | Starting graph for Lesson 1 |
 | `team_graph.py` | Lesson 4 — Python driver patterns |
 | `embed.py` | Lesson 5 — local embeddings + vector index |
@@ -201,6 +202,37 @@ out `and not llm` when you add your own filter. Database tests never leave data 
 tests use their own `pytest` user. A test for a lesson you haven't done yet is skipped with a
 reason. [Lesson 0](lessons/00-setup.md#test-it) explains the three kinds of test, and each
 lesson ends with a *Test it* section on what its tests teach.
+
+### Traces and eval history in MLflow (optional)
+
+The Lesson 18 trace shows what memory did on one turn. For more detail, such as every LLM call
+with its prompt, tokens and latency, plus eval runs you can compare over time, turn on local
+MLflow tracing. It's off unless `MLFLOW_TRACKING_URI` is set:
+
+```bash
+uv sync --group observability                                    # once: installs mlflow
+uv run --group observability mlflow server --backend-store-uri sqlite:///mlflow.db --port 5001
+```
+
+Then, in another terminal, add `MLFLOW_TRACKING_URI=http://localhost:5001` to `.env` (or
+prefix one command with it), and run as usual with `--group observability`:
+
+```bash
+uv run --group observability python -m companion                 # every turn is a trace
+uv run --group observability python -m pytest -m llm             # one MLflow run per eval session
+```
+
+Open http://localhost:5001, experiment `companion`:
+- **Traces**: a chat turn is one trace (`recall` → `respond` → `remember`, the LLM calls, and
+  the Neo4j spans `store.recall`, `store.extraction_candidates`, `store.apply`), grouped by
+  session. Background extraction is its own trace in the same session. An eval case is one
+  trace holding every LLM call its trials made.
+- **Runs**: each `pytest -m llm` session logs the models, `EVAL_TRIALS`, a hash of the prompt
+  files, `passed`/`failed`/`pass_rate`, and an `evals.json` table with each case's failure
+  and trace id. Compare runs to see which prompt or model change broke a case.
+
+pytest still decides pass or fail; MLflow keeps the history. [`observability.py`](observability.py)
+does the setup, and the hooks are at the end of [`tests/conftest.py`](tests/conftest.py).
 
 ### Release check: on the model you ship
 
