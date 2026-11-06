@@ -1,8 +1,9 @@
-"""Optional MLflow tracing and eval logging. Off unless MLFLOW_TRACKING_URI is set.
+"""Optional MLflow tracing and eval logging. Off unless MLFLOW_TRACKING_URI is set in config.py.
 
     uv sync --group observability                         # once: installs mlflow
     uv run --group observability mlflow server --backend-store-uri sqlite:///mlflow.db --port 5001
-    MLFLOW_TRACKING_URI=http://localhost:5001 uv run --group observability python -m companion
+    # in config.py: MLFLOW_TRACKING_URI = "http://localhost:5001", then
+    uv run --group observability python -m companion
 
 What you get once it's on:
 - every LangGraph node and LLM call, with its prompt, output, tokens and latency
@@ -18,26 +19,26 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import os
 
 _mlflow = None  # the mlflow module once setup() turned tracing on
 
 
-def setup() -> bool:
-    """Turn tracing on if MLFLOW_TRACKING_URI is set and mlflow is installed. Safe to call twice."""
+def setup(uri: str | None, experiment: str = "companion") -> bool:
+    """Turn tracing on if `uri` (config.MLFLOW_TRACKING_URI) is set and mlflow is installed.
+    Called once by config.py; safe to call again."""
     global _mlflow
     if _mlflow is not None:
         return True
-    uri = os.getenv("MLFLOW_TRACKING_URI", "").strip()
     if not uri:
         return False
     try:
         import mlflow
     except ImportError:
-        print("MLFLOW_TRACKING_URI is set but mlflow isn't installed: uv sync --group observability")
+        print("MLFLOW_TRACKING_URI is set in config.py but mlflow isn't installed: "
+              "uv sync --group observability")
         return False
     mlflow.set_tracking_uri(uri)
-    mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "companion"))
+    mlflow.set_experiment(experiment)
     mlflow.langchain.autolog()
     _mlflow = mlflow
     return True

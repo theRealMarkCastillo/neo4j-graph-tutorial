@@ -15,16 +15,18 @@ from pathlib import Path
 
 import pytest
 
-# The tests run on the local embedding model by default (Lesson 19): offline, fast, free. Its
-# vectors live apart from a remote model's, so this is safe even when your chats use
-# EMBED_BASE_URL. TEST_REMOTE_EMBEDDINGS=1 runs them on the model in .env (the README's release
-# check): thresholds come from the active profile, so the same tests hold on either model.
-if not os.getenv("TEST_REMOTE_EMBEDDINGS"):
-    os.environ["EMBED_BASE_URL"] = ""  # set before config loads .env, which won't override it
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # import config, companion, ...
 
 import config  # noqa: E402
+
+# The tests run on the local embedding model by default (Lesson 19): offline, fast, free. Its
+# vectors live apart from a remote model's, so this is safe even when your chats use
+# config.EMBED_BASE_URL. TEST_REMOTE_EMBEDDINGS=1 runs them on the model in config.py (the
+# README's release check): thresholds come from the active profile, so the same tests hold on
+# either model. Patched here, before any companion module reads the settings.
+if not os.getenv("TEST_REMOTE_EMBEDDINGS"):
+    config.EMBED_BASE_URL = None
+    config.EMBED_MODEL = config.LOCAL_EMBED_MODEL
 
 
 @pytest.fixture(scope="session")
@@ -80,7 +82,7 @@ def store(driver):
 @pytest.fixture(scope="session")
 def llm_ready():
     if not config.llm_configured():
-        pytest.skip("LLM_MODEL is not set in .env")
+        pytest.skip("no LLM: set LLM_API_KEY in .env (or point config.LLM_BASE_URL at a local server)")
 
 
 @pytest.hookimpl(tryfirst=True)  # tag before `-m` filtering runs

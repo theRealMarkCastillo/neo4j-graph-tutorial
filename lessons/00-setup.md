@@ -3,7 +3,7 @@
 ## Start Neo4j
 
 ```bash
-cp .env.example .env      # then set NEO4J_PASSWORD (and LLM_* if you want LLM answers)
+cp .env.example .env      # then set NEO4J_PASSWORD (and LLM_API_KEY if you want LLM answers)
 docker compose up -d --build
 docker compose ps         # wait for "healthy" (first start downloads APOC + GDS, ~1 min)
 ```
@@ -54,7 +54,7 @@ uv run python -c "import neo4j, langgraph; print('ok')"
   `.venv/bin/python` wherever the lessons say `uv run python`.
 - **Upgrading** is a deliberate step: `uv lock --upgrade`, run the tests, commit the new lock.
 
-All scripts read connection settings and keys from `.env` via [`config.py`](../config.py).
+All scripts read their settings from [`config.py`](../config.py); it takes only the secrets (Neo4j password, API keys) from `.env`.
 
 ## Concepts and design choices
 
@@ -93,7 +93,7 @@ Three kinds of test, cheapest first. Most of the suite is the first two.
 |---|---|---|---|
 | **unit** | nothing | `normalize("girlfriend") == "partner"` | always |
 | **db** | Neo4j up | a write in a rolled-back transaction | by default; skipped if Neo4j is down |
-| **llm** (eval) | `LLM_*` in `.env` | "a move supersedes the old home" | only with `-m llm` |
+| **llm** (eval) | `LLM_API_KEY` in `.env` | "a move supersedes the old home" | only with `-m llm` |
 
 [`tests/test_00_setup.py`](../tests/test_00_setup.py) is a *smoke test*: Neo4j answers, APOC and
 GDS are installed, the seed is loaded. The cheapest test catches the most common problem.
