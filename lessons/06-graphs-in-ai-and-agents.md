@@ -80,3 +80,8 @@ ways:
 - [Lesson 8](08-memory-design-for-companions.md) — memory design for an assistant / companion.
 - [Lesson 9](09-memory-write-path.md) — extracting memories from conversation into the graph.
 - [Lesson 10](10-companion-recall-and-chat.md) — hybrid recall, the LangGraph companion, terminal chat.
+
+<!-- nav -->
+---
+
+[← Lesson 5: Vector search and GraphRAG](05-vectors-and-graphrag.md) · [All lessons](../README.md#lessons) · [Lesson 7: A LangGraph agent with graph tools →](07-langgraph-agent-with-graph-tools.md)

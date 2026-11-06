@@ -304,3 +304,8 @@ little each time, which is how it found a case the fixed fake data in the unit t
 ## Next
 
 [Lesson 14](14-production-hardening.md) makes the write path safe for failures and concurrency, and moves extraction to the background.
+
+<!-- nav -->
+---
+
+[← Lesson 12: An ontology for the life graph](12-ontology.md) · [All lessons](../README.md#lessons) · [Lesson 14: Production hardening: transactions, locks and background extraction →](14-production-hardening.md)

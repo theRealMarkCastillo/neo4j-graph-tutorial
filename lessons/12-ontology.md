@@ -295,4 +295,11 @@ test is why the `_sync_superseded_relations` backstop was deleted.
 - **Infer** at read time when facts change often; materialize only when queries need the speed.
 - When a step "does nothing", print the raw LLM output before blaming the LLM.
 
-Next: [Lesson 13 — memory over time](13-memory-over-time.md): expiry, decay and consolidation.
+## Next
+
+[Lesson 13 — memory over time](13-memory-over-time.md): expiry, decay and consolidation.
+
+<!-- nav -->
+---
+
+[← Lesson 11: Harder scenarios, and testing memory with scenarios](11-harder-scenarios-and-evals.md) · [All lessons](../README.md#lessons) · [Lesson 13: Memory over time: expiry, decay and consolidation →](13-memory-over-time.md)

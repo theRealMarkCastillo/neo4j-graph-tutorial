@@ -1,4 +1,4 @@
-# Lesson 19: choosing an embedding model (and re-measuring everything that depends on it)
+# Lesson 19 — Choosing an embedding model (and re-measuring everything that depends on it)
 
 Since Lesson 8, the companion has embedded memories with `BAAI/bge-small-en-v1.5`: 384
 dimensions on the CPU, no key. Lesson 18's **Try recall** tab showed its limit. "dogs" returned
@@ -184,9 +184,10 @@ RETURN m[$vprop] AS vec
 
 This gives three things:
 
-- **The tests stay local.** `tests/conftest.py` empties `EMBED_BASE_URL` before `.env` loads.
-  The test suite runs offline in seconds, pins bge-small's thresholds, and doesn't touch the
-  vectors your chats use. `TEST_REMOTE_EMBEDDINGS=1` opts in to the remote model.
+- **The default test run stays local.** `tests/conftest.py` empties `EMBED_BASE_URL` before
+  `.env` loads, so the suite runs offline in seconds and doesn't touch the vectors your chats
+  use. `TEST_REMOTE_EMBEDDINGS=1` runs it on the remote model: the
+  [release check](../README.md#release-check-on-the-model-you-ship).
 - **Switching back costs nothing.** The old vectors are still there.
 - **Lessons 5–7** (`embed.py`, `graphrag.py`, `team_agent.py`) keep `LOCAL_EMBED_MODEL` and
   their own 384-dim index.
@@ -197,7 +198,8 @@ This gives three things:
 |---|---|---|---|
 | Your chats (CLI and web UI) | Qwen3-Embedding-8B, if `EMBED_BASE_URL` is set | remote API | best separation of related and unrelated memories |
 | The same, with `EMBED_BASE_URL` empty | bge-small | fastembed, CPU | no key, offline, the course default |
-| The test suite | bge-small | fastembed, CPU | offline, free, seconds; pins thresholds |
+| The test suite (default run) | bge-small | fastembed, CPU | offline, free, seconds |
+| The release check (`TEST_REMOTE_EMBEDDINGS=1`) | the model in `.env` | remote API | tests the model you ship |
 | Lessons 5–7 scripts | bge-small | fastembed, CPU | the learning examples need no account |
 | "Loosely related" labels | the cross-encoder `ms-marco-MiniLM-L-6-v2` | fastembed, CPU | only for models without a measured `weak_below` (bge-small) |
 | Lesson 15 graph embeddings | FastRP | inside Neo4j (GDS) | they come from graph structure, not text |
@@ -274,10 +276,37 @@ A fake endpoint stands in for the remote model. The tests check that:
 - a model with no measured thresholds is refused;
 - a query gets the instruction and stored text doesn't; clustering uses its own instruction;
 - vectors are unit length, and repeats come from the cache;
-- the local profile gets every `duplicate`, `forgotten` and `name_match` calibration pair right;
+- the active model gets every `duplicate`, `forgotten` and `name_match` calibration pair right,
+  except its listed `KNOWN_MISSES` (Qwen: three name pairs, including Bob ~ Robert);
 - `reembed` fills in a missing vector, and recall finds that memory again;
 - a tombstone with no vector for this model is ignored, not a crash;
 - with `weak_below` set, the vector score labels weak matches and the cross-encoder never runs.
+
+### Tests that hold on both models
+
+Run the whole suite with `TEST_REMOTE_EMBEDDINGS=1` and, before this lesson, 10 of 197 tests
+failed on Qwen. Nine of them were about bge-small, not about memory:
+
+| The test checked | On Qwen | Now it checks |
+|---|---|---|
+| a typed threshold (`≥ 0.975` in the log) | Qwen's cut is 0.966 | `PROFILE.duplicate` |
+| the cross-encoder's labels (`relevance < -8.5`; "the reranker misses ADHD") | no cross-encoder: Qwen labels by its own score, and gets ADHD *right* | whichever labeller `relevance_by` names |
+| habit clustering with plain vectors | consolidation uses the cluster instruction | `embed_for_clustering`, and "the three are in one group" |
+| the `embedding` property, bge-small's profile | Qwen has its own property and profile | the active profile's |
+
+The tenth was real: Qwen scores "Bob" ~ "Robert" at 0.837, under its 0.84 name cut, so "Bob"
+isn't kept as Robert's alias. It's a measured tradeoff (Qwen's name scores overlap, and a
+lower cut would merge different people), so it's listed in `KNOWN_MISSES` and the alias test
+uses Mike ~ Michael, which both models get. A test pinned to one model's numbers can't tell a
+regression from a model change. Write tests against the *profile*, and list a model's known
+misses explicitly.
+
+A remote model also changes **timing**. On a slow afternoon the same suite took 13 minutes
+instead of 5, and two background-worker tests timed out: they gave a write 5–10 seconds, and
+an embedding call alone can take that long. Worse, a test that times out leaves its job
+running, and the late write lands in the *next* test's data (Miso was "reinforced" on its first
+mention). Waits in tests that touch a remote service are now 60 seconds: the tests still
+check that the reply doesn't wait for memory, without assuming how fast the network is.
 
 ## Takeaways
 
@@ -295,3 +324,8 @@ A fake endpoint stands in for the remote model. The tests check that:
 That's the end of the course. A good place to keep going: try `Qwen/Qwen3-Embedding-0.6B`. It
 scored 0.974 at a quarter of the size, so you'd add its profile and run the calibration and
 the scenarios.
+
+<!-- nav -->
+---
+
+[← Lesson 18: Watching memory work, one turn at a time](18-seeing-memory-work.md) · [All lessons](../README.md#lessons)

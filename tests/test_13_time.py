@@ -10,7 +10,8 @@ import pytest
 
 from companion import clock, decay
 from companion.models import Extraction, MemoryOut
-from companion.store import PATTERN_SIMILARITY, _clusters, embed, format_context
+from companion.embeddings import embed_for_clustering
+from companion.store import PATTERN_SIMILARITY, _clusters, format_context
 
 D1 = dt.date(2026, 11, 18)      # noon on a Wednesday, per clock.now_for
 NOON = clock.now_for(D1)
@@ -181,9 +182,11 @@ def test_clustering_finds_the_group_an_early_pair_would_hide():
              "Riley's legs feel exhausted after a gym session.",
              "Riley is going to the gym after work and then having dinner",
              "Riley is at the gym before work."]
-    rows = [{"text": t, "vec": v} for t, v in zip(texts, embed(texts))]
+    rows = [{"text": t, "vec": v} for t, v in zip(texts, embed_for_clustering(texts), strict=True)]
     groups = _clusters(rows, PATTERN_SIMILARITY, 3)
-    assert [[r["text"] for r in g] for g in groups] == [[texts[0], texts[3], texts[4]]]
+    # One group with those three. A stronger model (Lesson 19) may also see "just got back"
+    # and "legs exhausted" as the same habit, which is right too: the regression was TWO pairs.
+    assert len(groups) == 1 and {texts[0], texts[3], texts[4]} <= {r["text"] for r in groups[0]}
 
 
 def test_clustering_does_not_chain():

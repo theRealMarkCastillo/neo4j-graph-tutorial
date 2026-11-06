@@ -44,7 +44,7 @@ label, and creates one vector index `embedded_vec` over all of them.
 > | 5.1 toy example | typed by hand | three made-up numbers |
 > | Lessons 5–7 scripts (`embed.py`, `graphrag.py`, `team_agent.py`) | fastembed on your CPU | bge-small, always |
 > | The companion (Lessons 8–19) | `companion/embeddings.py` | bge-small by default, or a remote endpoint set in `.env` (Lesson 19) |
-> | The test suite | fastembed on your CPU | bge-small, always, so tests run offline |
+> | The test suite | fastembed on your CPU | bge-small by default, so tests run offline; `TEST_REMOTE_EMBEDDINGS=1` runs them on your model |
 >
 > A small local model is the right start: no key, no cost, and you can see every step.
 > [Lesson 19](19-choosing-an-embedding-model.md) measures what a larger remote model buys.
@@ -216,3 +216,12 @@ prompt. The pair catches both failure modes.
 | Index it | `CREATE VECTOR INDEX ... OPTIONS {indexConfig: {`vector.dimensions`: N, `vector.similarity_function`: 'cosine'}}` |
 | Search | `CALL db.index.vector.queryNodes('index', k, $vec) YIELD node, score` |
 | GraphRAG | vector search → `MATCH (node)-[r]-(other)` → facts → LLM |
+
+## Next
+
+[Lesson 6](06-graphs-in-ai-and-agents.md) steps back: where graphs fit in AI systems and agents, before Lessons 7–19 build one.
+
+<!-- nav -->
+---
+
+[← Lesson 4: Graph algorithms (GDS) and Python](04-graph-algorithms-and-python.md) · [All lessons](../README.md#lessons) · [Lesson 6: Graphs in AI and AI agents (concepts) →](06-graphs-in-ai-and-agents.md)

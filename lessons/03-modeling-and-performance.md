@@ -166,3 +166,12 @@ and shows it's treated as plain data.
 
 Performance: avoid **AllNodesScan** / **NodeByLabelScan + Filter**; aim for **IndexSeek**;
 index start points; use `$parameters`.
+
+## Next
+
+[Lesson 4](04-graph-algorithms-and-python.md) runs algorithms over the whole graph (centrality, communities, similarity) and drives Neo4j from Python.
+
+<!-- nav -->
+---
+
+[← Lesson 2: Writing data](02-writing-data.md) · [All lessons](../README.md#lessons) · [Lesson 4: Graph algorithms (GDS) and Python →](04-graph-algorithms-and-python.md)

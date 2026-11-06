@@ -110,14 +110,16 @@ def remote() -> bool:
 
 def _compute(texts: list[str]) -> np.ndarray:
     global _local, _client
-    if not remote():
-        if _local is None:
+    with _lock:  # the background extractor and the chat can both arrive here first
+        if not remote() and _local is None:
             from fastembed import TextEmbedding
             _local = TextEmbedding(PROFILE.model)
+        if remote() and _client is None:
+            from openai import OpenAI
+            _client = OpenAI(base_url=config.EMBED_BASE_URL, api_key=config.EMBED_API_KEY,
+                             timeout=60, max_retries=3)
+    if not remote():
         return np.array(list(_local.embed(texts)), dtype=np.float32)
-    if _client is None:
-        from openai import OpenAI
-        _client = OpenAI(base_url=config.EMBED_BASE_URL, api_key=config.EMBED_API_KEY, timeout=60, max_retries=3)
     out = []
     for i in range(0, len(texts), 64):  # endpoints cap the batch size
         resp = _client.embeddings.create(model=PROFILE.model, input=texts[i:i + 64], encoding_format="float")
@@ -151,7 +153,7 @@ def _embed(texts: list[str], instruction: str) -> list[list[float]]:
     missing = [k for k in dict.fromkeys(keys) if k not in found]
     if missing:
         vecs = _compute([i + t for i, t in missing])
-        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
+        vecs /= np.maximum(np.linalg.norm(vecs, axis=1, keepdims=True), 1e-12)  # an all-zero vector stays zero
         found.update(zip(missing, vecs))
         with _lock:
             _cache.update(zip(missing, vecs))

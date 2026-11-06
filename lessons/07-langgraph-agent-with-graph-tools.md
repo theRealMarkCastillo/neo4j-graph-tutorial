@@ -39,6 +39,9 @@ g.add_edge("tools", "agent")
 app = g.compile(checkpointer=InMemorySaver())    # remembers messages per thread_id
 ```
 
+We wire the graph by hand to show the parts. LangChain 1.0's `create_agent(model, tools,
+checkpointer=...)` builds this same loop in one call, and is what you'd usually reach for.
+
 The **checkpointer** is LangGraph's short-term memory: every turn on the same `thread_id`
 sees the earlier messages. (Lessons 8–10 add *long-term* memory in Neo4j.)
 
@@ -134,7 +137,7 @@ What to notice:
 |---|---|---|---|---|
 | A ReAct agent with fixed tools plus a read-only Cypher tool | the model picks the right lookup; damage is limited by permissions | the model can pick the wrong tool (a trajectory eval checks) | a fixed workflow (the companion, D19); text-to-Cypher only | [D19](../docs/design-decisions.md#d19) |
 | Retrieval on demand (the model calls a tool) | no cost when the question doesn't need the graph | the model has to know to look | retrieve every turn in code (the companion, D10) | [D10](../docs/design-decisions.md#d10) |
-| In-memory checkpointer | no setup | conversations vanish on restart | SQLite / Postgres checkpointers | [D15](../docs/design-decisions.md#d15) |
+| In-memory checkpointer | no setup | conversations vanish on restart | SQLite / Postgres checkpointers (`langgraph-checkpoint-postgres`); LangChain 1.0's `create_agent` builds the same loop in one call | [D15](../docs/design-decisions.md#d15) |
 
 ## Test it — [`tests/test_07_agent.py`](../tests/test_07_agent.py)
 
@@ -161,3 +164,12 @@ Test an agent in two layers:
 - Start with **fixed, parameterized tools**; add free-form Cypher behind a read-only transaction.
 - Put the **schema in the tool description** so the model can write queries.
 - LangGraph's checkpointer gives **short-term** memory per thread; long-term memory needs a store.
+
+## Next
+
+This agent forgets everything when the process ends. [Lesson 8](08-memory-design-for-companions.md) designs long-term memory for a companion, in the same database.
+
+<!-- nav -->
+---
+
+[← Lesson 6: Graphs in AI and AI agents (concepts)](06-graphs-in-ai-and-agents.md) · [All lessons](../README.md#lessons) · [Lesson 8: Designing memory for an AI assistant / companion →](08-memory-design-for-companions.md)

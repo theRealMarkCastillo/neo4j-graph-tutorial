@@ -22,8 +22,9 @@ Plus two things that aren't single memories:
 ## Why graph + vectors (not just a vector store)
 
 This is the project's central choice. [Design decisions D1–D2](../docs/design-decisions.md#d1)
-compare it with Postgres + pgvector, a vector DB only, RDF, and managed memory services
-(Mem0, Zep/Graphiti, Letta, LangMem). The kinds of memory in the table above come from
+compare it with Postgres + pgvector, a vector DB only, other graph databases, RDF, memory
+frameworks (Mem0, Zep/Graphiti, Letta, Cognee, LangMem), cloud memory services and memory kept
+as files. The kinds of memory in the table above come from
 psychology: *semantic* memory here means general facts
 ([sense 1](../docs/glossary.md#semantic)), not vector search.
 
@@ -129,3 +130,12 @@ SHOW INDEXES YIELD name, type WHERE name IN ['memory_vec','entity_vec','episode_
 Schema setup must be idempotent, so the test runs `ensure_schema()` **twice** and then checks
 that every constraint and vector index is `ONLINE`. A second test proves the id constraint
 actually rejects a duplicate.
+
+## Next
+
+[Lesson 9](09-memory-write-path.md) builds the write path: an LLM turns each message into memories, entities and relations that land in this schema.
+
+<!-- nav -->
+---
+
+[← Lesson 7: A LangGraph agent with graph tools](07-langgraph-agent-with-graph-tools.md) · [All lessons](../README.md#lessons) · [Lesson 9: The write path: from conversation to graph →](09-memory-write-path.md)

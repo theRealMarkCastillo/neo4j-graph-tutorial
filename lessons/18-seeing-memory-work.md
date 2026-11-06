@@ -1,4 +1,4 @@
-# Lesson 18: watching memory work, one turn at a time
+# Lesson 18 — Watching memory work, one turn at a time
 
 Lesson 17's page shows what memory **holds**: the graph, the decay curves and the related pairs. Each turn
 also does two things you can't see from the result:
@@ -277,3 +277,8 @@ A trace that is wrong teaches the wrong thing, so it gets tests like any other f
 
 [Lesson 19](19-choosing-an-embedding-model.md) replaces the small local embedding model behind
 "dogs" with a better remote one, and re-measures every threshold that depended on it.
+
+<!-- nav -->
+---
+
+[← Lesson 17: A web UI: chat, life graph, decay and insights on one page](17-web-ui.md) · [All lessons](../README.md#lessons) · [Lesson 19: Choosing an embedding model (and re-measuring everything that depends on it) →](19-choosing-an-embedding-model.md)

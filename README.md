@@ -22,9 +22,10 @@ explain the design rather than the code:
 
 - **[Design decisions and tradeoffs](docs/design-decisions.md)**: 20 decisions (why Neo4j, why
   memories are sentence nodes, why recall runs every turn, why forgetting deletes...). Each
-  covers what it costs, the alternatives (Postgres + pgvector, a vector DB, RDF/OWL, Mem0,
-  Zep/Graphiti, Letta, LangMem, GraphRAG), when to revisit it, and the gaps this design doesn't
-  cover.
+  covers what it costs, the alternatives (Postgres + pgvector, a vector DB, other graph
+  databases, RDF/OWL, Mem0, Zep/Graphiti, Letta, Cognee, LangMem, Neo4j's own agent-memory
+  package, cloud memory services, memory as files, GraphRAG), when to revisit it, and the gaps
+  this design doesn't cover.
 - **[The pipeline as concepts](docs/design-decisions.md#the-pipeline-as-concepts)**: each step
   of a chat turn mapped to its concept and the field it comes from (psychology, NLP,
   databases, information retrieval, knowledge representation).
@@ -81,10 +82,12 @@ Ollama, LM Studio, vLLM...). Set in `.env`:
 | `LLM_TEMPERATURE` | chat temperature |
 | `COMPANION_USER`, `COMPANION_NAME` | default user and companion names |
 
-Embeddings run locally by default (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
-Lessons 5–7 and the test suite always use that local model. The companion can use a remote
-model instead (Lesson 19 has the full table of what runs where).
-Lesson 19 switches the companion to a remote model with three more keys:
+**Embeddings: local to learn, remote to use.** Lessons 5–7 and the default test run always use
+a small local model (`BAAI/bge-small-en-v1.5` via fastembed): no key, offline, the same numbers
+every run, and the numbers recorded in Lessons 8–18. For real use of the companion we
+recommend the larger remote model: it separates related from unrelated memories far better
+(AUC 0.994 vs 0.854) and fixes misses the small model can't. Lesson 19 has the full table of
+what runs where. It takes three more keys:
 
 | Key | |
 |---|---|
@@ -92,8 +95,8 @@ Lesson 19 switches the companion to a remote model with three more keys:
 | `EMBED_MODEL` | e.g. `Qwen/Qwen3-Embedding-8B`; needs a measured profile in `companion/embeddings.py` |
 | `EMBED_API_KEY` | optional, defaults to `LLM_API_KEY` |
 
-After switching, run `.venv/bin/python -m companion.reembed`. The tests always use the local
-model. The reranker that labels unrelated recall matches also runs locally (`RERANK_MODEL`,
+After switching, run `.venv/bin/python -m companion.reembed`. The default test run uses the
+local model; the [release check](#release-check-on-the-model-you-ship) runs everything on yours. The reranker that labels unrelated recall matches also runs locally (`RERANK_MODEL`,
 default `Xenova/ms-marco-MiniLM-L-6-v2`, Lesson 18; not used when the embedding profile sets
 `weak_below`, Lesson 19). Local models are downloaded once and loaded once per process.
 
@@ -139,6 +142,24 @@ out `and not llm` when you add your own filter. Database tests never leave data 
 tests use their own `pytest` user. A test for a lesson you haven't done yet is skipped with a
 reason. [Lesson 0](lessons/00-setup.md#test-it) explains the three kinds of test, and each
 lesson ends with a *Test it* section on what its tests teach.
+
+### Release check: on the model you ship
+
+The default run pins the local embedding model, so it stays fast, free and offline. Before you
+rely on a change, run the tests, the LLM evals and the scenarios on the model in your `.env`:
+
+```bash
+TEST_REMOTE_EMBEDDINGS=1 .venv/bin/python -m pytest              # ~5 min: every embedding is remote
+TEST_REMOTE_EMBEDDINGS=1 .venv/bin/python -m pytest -m llm       # LLM evals, costs money
+.venv/bin/python -m companion.scenarios                          # scripted conversations (use .env)
+.venv/bin/python -m companion.calibrate                          # are the thresholds still right?
+```
+
+Tests that check a threshold read it from the active model's profile. Tests that are about one
+model (bge-small's cross-encoder labels, a calibration pair a model is known to miss) say so
+and check the right thing for each. A model's known misses are listed in
+[`tests/test_19_embeddings.py`](tests/test_19_embeddings.py) (`KNOWN_MISSES`): anything else
+failing is a regression.
 
 ## Common commands
 

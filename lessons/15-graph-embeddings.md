@@ -155,3 +155,8 @@ facts: the companion doesn't store "Cy is Ana's friend" because embeddings put t
 ## Next
 
 [Lesson 16](16-personas.md) lets several personas share one memory without sharing secrets.
+
+<!-- nav -->
+---
+
+[← Lesson 14: Production hardening: transactions, locks and background extraction](14-production-hardening.md) · [All lessons](../README.md#lessons) · [Lesson 16: Personas: several companions, one memory →](16-personas.md)

@@ -183,7 +183,7 @@ def test_the_reply_does_not_wait_for_memory(store, fake_llm, monkeypatch):
     gate = threading.Event()
 
     def slow_extract(*_, **__):  # stands in for a multi-second LLM call
-        gate.wait(5)
+        gate.wait(60)  # released below; generous so a slow remote embedding endpoint can't end it early
         return Extraction(memories=[fact("Pytest started learning the cello")])
 
     monkeypatch.setattr(fake_llm, "extract_memories", slow_extract)
@@ -195,7 +195,7 @@ def test_the_reply_does_not_wait_for_memory(store, fake_llm, monkeypatch):
     assert out["messages"][-1].content == "Nice!"  # answered...
     assert count(store) == 0                         # ...while the memory is still being written
     gate.set()
-    assert bg.wait(5)[0].startswith("+ [fact] Pytest started learning the cello")
+    assert bg.wait(60)[0].startswith("+ [fact] Pytest started learning the cello")  # remote embeddings can take seconds
     assert count(store) == 1
     bg.close()
 
@@ -212,7 +212,7 @@ def test_a_background_forget_is_scrubbed_from_the_conversation_next_turn(store, 
     episode_id = store.start_episode(on=D1)
 
     chat(app, "Please forget everything about Jordan.", episode_id)
-    assert any(line.startswith("forgot Jordan") for line in bg.wait(5))
+    assert any(line.startswith("forgot Jordan") for line in bg.wait(60))
     out = chat(app, "ok thanks", episode_id)
     texts = " ".join(m.content for m in out["messages"])
     assert "Jordan" not in texts and "[forgotten]" in texts

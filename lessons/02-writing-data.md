@@ -190,3 +190,12 @@ has relationships does **not** fail when the statement runs. It fails when the t
 | Speed up lookups | `CREATE INDEX ... FOR (n:Label) ON (n.k)` |
 | Bulk load | `UNWIND $rows AS row MERGE ...` |
 | Delete a node | `DELETE` (fails if it has relationships) or `DETACH DELETE` |
+
+## Next
+
+[Lesson 3](03-modeling-and-performance.md) asks how to *shape* the graph (node, relationship or property?) and how to make queries fast. Its reification pattern is how memories are modeled in Lesson 8.
+
+<!-- nav -->
+---
+
+[← Lesson 1: Graph basics and reading data with Cypher](01-graph-basics-and-reading.md) · [All lessons](../README.md#lessons) · [Lesson 3: Modeling and performance →](03-modeling-and-performance.md)

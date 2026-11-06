@@ -256,6 +256,9 @@ most design arguments. The last column says where this repo stands.
 | **Consolidation / sleep-time compute** | Memory consolidation in neuroscience (sleep strengthens and reorganizes memories) | Background jobs that rewrite memory between conversations (Letta's sleep-time agents) | "Your agent learns while it sleeps" | End-of-episode pass + `consolidate()` (Lessons 11, 13) |
 | **Memory poisoning** | Data poisoning / prompt injection research applied to stored memory | Malicious or mistaken text stored as memory and trusted later; ASI06 in OWASP's 2026 Top 10 for agentic applications | — | A known gap ([gaps](design-decisions.md#gaps-what-this-design-does-not-cover)) |
 | **Long-term memory benchmark** | Datasets with defined tasks: LoCoMo (2024), LongMemEval (2024: adds knowledge updates and abstention), BEAM (2026: 1M–10M tokens) | Leaderboard numbers on those | Self-reported scores across vendors, often with different settings | Not run; our scenarios are code-graded and repo-specific ([D20](design-decisions.md#d20)) |
+| **Reasoning memory** | Close to *procedural* memory in CoALA: how to act, not what is true | Stored traces of the agent's own decisions: the trigger, its thoughts, tool calls and whether it worked (Neo4j Labs' `neo4j-agent-memory`) | "Agents that learn from experience" | Not stored; the Lesson 18 trace is shown per turn, then discarded ([gaps](design-decisions.md#gaps-what-this-design-does-not-cover)) |
+| **Memory bank / memory store (cloud)** | — | A managed service holding extracted *memory records* per scope (user, session), searched by similarity: Bedrock AgentCore Memory, Vertex AI Memory Bank | "Long-term memory in one API call" | Ours is self-hosted, with a graph and explicit time ([D1](design-decisions.md#d1)) |
+| **Memory as files / context repository** | — | The agent keeps its memory in Markdown files it edits with file tools; Anthropic's memory tool, Letta's git-backed *MemFS* (2026) | "Memory you can read and diff" | Not used: our memories are rows in a graph, shown in the web UI |
 | **Digital twin** | A simulation model kept in sync with a physical system | A live model of an organization's entities and processes | Any database about real things | Not used |
 
 **How to read a vendor claim:**
@@ -459,6 +462,15 @@ relying on a product detail.
 - LangMem conceptual guide — https://langchain-ai.github.io/langmem/concepts/conceptual_guide
 - Mem0 graph memory — https://docs.mem0.ai/open-source/features/graph-memory ; Mem0 2.0 (ADD-only extraction) — https://pypi.org/project/mem0ai/2.0.0/ and https://docs.mem0.ai/migration/
 - Graphiti (Zep's temporal knowledge graph) — https://pypi.org/project/graphiti-core/
+- Letta MemFS (git-backed memory files) — https://docs.letta.com/concepts/memfs ; context repositories — https://www.letta.com/blog/context-repositories
+- Cognee (add / cognify / memify pipeline) — https://github.com/topoteretes/cognee
+- Neo4j Labs agent memory (short-term, long-term POLE+O, reasoning memory) — https://neo4j.com/labs/agent-memory
+- Amazon Bedrock AgentCore Memory (short-term events, long-term strategies) — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-memory.html
+- Vertex AI Agent Engine Memory Bank (scopes, similarity search) — https://docs.cloud.google.com/agent-builder/agent-engine/memory-bank/overview
+- OpenAI Agents SDK sessions (conversation history) — https://openai.github.io/openai-agents-python/sessions/
+- Kuzu archived (October 2025) and the LadybugDB fork — https://github.com/kuzudb/kuzu
+- LangChain 1.0 `create_agent` — https://docs.langchain.com/oss/python/langchain/agents
+- Anthropic memory tool — https://docs.claude.com/en/docs/agents-and-tools/tool-use/memory-tool
 - Microsoft GraphRAG: DRIFT search — https://www.microsoft.com/en-us/research/blog/introducing-drift-search-combining-global-and-local-search-methods-to-improve-quality-and-efficiency/ ; LazyGraphRAG — https://www.microsoft.com/en-us/research/blog/lazygraphrag-setting-a-new-standard-for-quality-and-cost/
 - Neo4j vector values and limits (4096 dims) — https://neo4j.com/docs/cypher-manual/5/values-and-types/vector/ ; `SEARCH` clause — https://neo4j.com/docs/cypher-manual/current/clauses/search/ ; versions — https://endoflife.date/neo4j
 - Neo4j hybrid retrieval (`HybridRetriever`) — https://neo4j.com/developer-blog/hybrid-retrieval-graphrag-python-package/

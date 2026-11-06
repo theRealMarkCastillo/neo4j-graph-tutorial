@@ -15,9 +15,10 @@ from pathlib import Path
 
 import pytest
 
-# The tests run on the local embedding model (Lesson 19): offline, fast, and the thresholds
-# they pin down are bge-small's. Its vectors live apart from a remote model's, so this is
-# safe even when your chats use EMBED_BASE_URL. Opt in with TEST_REMOTE_EMBEDDINGS=1.
+# The tests run on the local embedding model by default (Lesson 19): offline, fast, free. Its
+# vectors live apart from a remote model's, so this is safe even when your chats use
+# EMBED_BASE_URL. TEST_REMOTE_EMBEDDINGS=1 runs them on the model in .env (the README's release
+# check): thresholds come from the active profile, so the same tests hold on either model.
 if not os.getenv("TEST_REMOTE_EMBEDDINGS"):
     os.environ["EMBED_BASE_URL"] = ""  # set before config loads .env, which won't override it
 

@@ -60,7 +60,11 @@ def test_an_unrelated_message_gets_only_loosely_related_memories(life):
     about 0.7 against the dog and the sister (found in the web UI). The reranker labels them
     for the trace. They're not dropped: inferential matches score just as low."""
     r = life.recall("do you like pizza?", today=T)
-    assert r["semantic"] and all(x["weak"] and x["relevance"] < -8.5 for x in r["semantic"])
+    assert r["semantic"] and all(x["weak"] for x in r["semantic"])
+    if r["relevance_by"] == "cross-encoder":  # bge-small: the reranker's scores (logits)
+        assert all(x["relevance"] < -8.5 for x in r["semantic"])
+    else:  # a model with its own cut (Lesson 19): every score is under it
+        assert all(x["relevance"] < r["relevance_min"] for x in r["semantic"])
 
 
 def test_a_related_message_keeps_its_match_on_top(life):
@@ -71,12 +75,16 @@ def test_a_related_message_keeps_its_match_on_top(life):
 
 def test_an_inferential_match_is_kept_even_when_the_reranker_misses_it(store):
     """"My meds don't help" -> the ADHD memory: the reranker scores it like noise (-10.9),
-    so dropping weak matches would hide exactly this (the sensitive scenario caught it)."""
+    so dropping weak matches would hide exactly this (the sensitive scenario caught it).
+    Qwen3-Embedding-8B labels it by its own score (0.74) and gets it right (Lesson 19)."""
     store.apply(Extraction(memories=[m("Pytest was diagnosed with ADHD in 2025 and takes medication for it",
                                        sensitive=True)]), today=T)
     r = store.recall("I'm struggling to focus at work, my meds don't seem to help", today=T)
     assert "ADHD" in format_context(r, T)
-    assert r["semantic"][0]["weak"]  # the reranker did miss it: only the vector search found it
+    if r["relevance_by"] == "cross-encoder":
+        assert r["semantic"][0]["weak"]  # the reranker did miss it: only the vector search found it
+    else:
+        assert "ADHD" in r["semantic"][0]["text"] and not r["semantic"][0]["weak"]
 
 
 def test_boundaries_are_always_in_core(life):

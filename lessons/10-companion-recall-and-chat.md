@@ -1,5 +1,8 @@
 # Lesson 10 — Recall, the LangGraph companion, and the terminal chat
 
+Lesson 9 wrote memories into the graph. This lesson reads them back: on every message, recall
+what matters, put it in the prompt, and reply. Then you can chat with the companion in a terminal.
+
 ## The read path: hybrid recall — `MemoryStore.recall()`
 
 Every user message triggers one recall that combines five sources:
@@ -233,19 +236,11 @@ The next test found a second bug in the same snippet. Its variable `e` collided 
 silently became "this entity". A protected person then leaked through the entity hop and
 through "No longer true".
 
-## Where to go next
+## Next
 
-Later lessons build on this:
-- **[Lesson 11](11-harder-scenarios-and-evals.md)**: scripted conversations with known facts as
-  evals, checking recall and whether boundaries ever leak.
-- **[Lesson 12](12-ontology.md)**: a relation ontology (synonyms, one-at-a-time relations,
-  inferred family links).
-- **[Lesson 13](13-memory-over-time.md)**: expiry, decay, and a consolidation job that rolls
-  repeated memories up into habits and prunes faded trivia.
+The first demo passed easy cases. [Lesson 11](11-harder-scenarios-and-evals.md) writes harder multi-session conversations and turns them into evals.
 
-- **[Lesson 14](14-production-hardening.md)**: transactions, a lock against duplicate writes,
-  and extraction in the background so replies never wait on it.
-- **[Lesson 15](15-graph-embeddings.md)**: graph embeddings (`gds.fastRP`) on the life graph to
-  find related people and themes.
-- **[Lesson 16](16-personas.md)**: several personas with their own view of the same person.
-- **[Lesson 17](17-web-ui.md)**: a web page showing the chat, the graph and the decay curves.
+<!-- nav -->
+---
+
+[← Lesson 9: The write path: from conversation to graph](09-memory-write-path.md) · [All lessons](../README.md#lessons) · [Lesson 11: Harder scenarios, and testing memory with scenarios →](11-harder-scenarios-and-evals.md)

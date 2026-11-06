@@ -231,3 +231,12 @@ people to ignore failures.
 - **Patterns are the query.** Arrows can point either way, or meet in the middle `->(s)<-`.
 - **Hops are cheap.** `*1..3` and `shortestPath` replace recursive SQL.
 - **`WITH`** joins query stages into a pipeline; use it to filter on aggregates.
+
+## Next
+
+[Lesson 2](02-writing-data.md) changes the graph: `CREATE`, `MERGE`, `SET` and `DELETE`, and the constraints that keep it clean.
+
+<!-- nav -->
+---
+
+[← Lesson 0: Setup](00-setup.md) · [All lessons](../README.md#lessons) · [Lesson 2: Writing data →](02-writing-data.md)

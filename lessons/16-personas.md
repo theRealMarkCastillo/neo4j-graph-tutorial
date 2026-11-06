@@ -148,3 +148,8 @@ same sentence without them doesn't. It passed 3/3.
 ## Next
 
 [Lesson 17](17-web-ui.md) puts the chat, the life graph, the decay curves and these insights on one web page.
+
+<!-- nav -->
+---
+
+[← Lesson 15: Graph embeddings: who and what belong together?](15-graph-embeddings.md) · [All lessons](../README.md#lessons) · [Lesson 17: A web UI: chat, life graph, decay and insights on one page →](17-web-ui.md)

@@ -95,3 +95,12 @@ docker compose up -d
 
 > The lessons build on each other: later outputs assume you ran the earlier lessons' write
 > queries in order. Outputs recorded here are from the original run on 2026-11-05.
+
+## Next
+
+With Neo4j running and the team graph loaded, [Lesson 1](01-graph-basics-and-reading.md) reads it with Cypher: patterns, hops and aggregation.
+
+<!-- nav -->
+---
+
+[All lessons](../README.md#lessons) · [Lesson 1: Graph basics and reading data with Cypher →](01-graph-basics-and-reading.md)

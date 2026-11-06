@@ -145,3 +145,8 @@ Anyone who can reach it can read the memories. A real deployment needs at least:
 ## Next
 
 [Lesson 18](18-seeing-memory-work.md) shows what memory does on each turn: what recall found, the exact prompt, and why each write happened.
+
+<!-- nav -->
+---
+
+[← Lesson 16: Personas: several companions, one memory](16-personas.md) · [All lessons](../README.md#lessons) · [Lesson 18: Watching memory work, one turn at a time →](18-seeing-memory-work.md)

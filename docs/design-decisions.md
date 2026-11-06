@@ -81,10 +81,13 @@ the needs that vectors alone don't meet.
 |---|---|---|
 | **Vector DB only** (Pinecone, Qdrant, Chroma, pgvector alone) | memory is "find similar past text"; no entities or history | multi-hop, "everything about X", contradiction handling, time |
 | **Postgres + pgvector** (+ recursive CTEs, or Apache AGE for openCypher) | you already run Postgres; joins are shallow; you want one familiar DB | deep or variable-length traversals get awkward and slow; graph modeling is by convention |
+| **Another property-graph DB** (Memgraph, FalkorDB, Amazon Neptune; embedded: LadybugDB) | Memgraph: in-memory speed and streaming; FalkorDB: Redis-based, low latency, used by Graphiti and Cognee; Neptune: managed on AWS with LPG and RDF; embedded: no server at all | most speak Cypher or openCypher, so the ideas here carry over, but GDS, APOC and vector-index details differ. Kuzu, the best-known embedded option, was archived in October 2025; LadybugDB is its maintained fork |
 | **Separate graph DB + vector DB** | each side at large scale, with a specialist team | two writes per memory, no shared transaction, ids to keep in sync |
 | **RDF triple store** (GraphDB, Stardog, Neptune RDF) + OWL | formal semantics, standard vocabularies, reasoning across organizations | heavier modeling, SPARQL, weaker vector support; overkill for one person's life |
 | **Document/KV store** (LangGraph `BaseStore`, Redis, Mongo) | a "user profile" document is enough | no relationships; every query is a scan or a custom index |
-| **Managed memory service** (Mem0, Zep, Letta, LangMem) | you want memory as a product, not a project | less control over identity, time, privacy rules and evaluation; see [Other systems](#how-other-memory-systems-choose) |
+| **Memory framework or service** (Mem0, Zep, Letta, Cognee, LangMem, Neo4j Labs `neo4j-agent-memory`) | you want memory as a product, not a project | less control over identity, time, privacy rules and evaluation; see [Other systems](#how-other-memory-systems-choose) |
+| **Cloud platform memory** (Amazon Bedrock AgentCore Memory, Vertex AI Agent Engine Memory Bank) | you already build agents on that cloud; extraction and consolidation are run for you | the provider's extraction rules and scopes; facts are a flat list searched by similarity, with no graph to traverse |
+| **Files the agent edits** (Anthropic's memory tool, Letta's git-backed MemFS) | the agent should curate its own notes; humans can read and diff them | no index or graph: the agent finds things with file search, and quality depends on the model's discipline |
 
 **Revisit when:** you need horizontal scale beyond one machine, hard multi-tenant isolation
 (D16), or your memory has no entities worth connecting.
@@ -495,6 +498,7 @@ Honest limits, and what would fill each one:
 | **Cost control** | One extraction call per turn, one remote embedding call per recall | Cheaper extraction model (`LLM_EXTRACTION_MODEL`), batching, caching, skipping more small talk |
 | **Benchmarks** | Our scenarios aren't comparable with other systems | Run LoCoMo / LongMemEval / BEAM-style suites |
 | **Learned thresholds** | Hand-measured cut-offs per model | Collect labelled pairs from the trace UI and refit |
+| **Reasoning memory** | The agent doesn't remember *how* it handled similar requests (which tools, what worked) | Store decision traces as nodes linked to the turn, as Neo4j Labs' `neo4j-agent-memory` does |
 | **Non-English** | Role-name rules and regexes are English | Language-aware rules; multilingual embedding model (Qwen3 is multilingual) |
 
 ---
@@ -507,10 +511,14 @@ shape of each approach, not a feature list.
 | System | Storage | Who writes memory | Update model | Retrieval |
 |---|---|---|---|---|
 | **This tutorial** | Neo4j: graph + vectors | background extractor + end-of-episode pass | supersede, bi-temporal, reinforce | 9 retrievers in code, every turn |
-| **MemGPT / Letta** | in-context *core* memory blocks + *archival* store + *recall* (conversation history) store | the agent itself via tools, and optionally a *sleep-time* agent in the background | agents edit blocks | agent searches when it chooses |
+| **MemGPT / Letta** | in-context *core* memory blocks + *archival* store + *recall* (conversation history) store; since 2026 optionally a git-backed file tree (MemFS) | the agent itself via tools, and optionally a *sleep-time* agent in the background | agents edit blocks | agent searches when it chooses |
 | **Mem0** | vector store, optional graph store (Neo4j and others) | LLM extraction pipeline | 1.x: LLM picks ADD / UPDATE / DELETE / NOOP; 2.0 (2026): ADD-only, conflicts resolved at retrieval | vector (+ graph) search |
 | **Zep / Graphiti** | temporal knowledge graph (Neo4j recommended, FalkorDB and others) | ingestion of *episodes* into entities and fact edges | bi-temporal validity on edges; contradictions invalidate old edges | embeddings + BM25 + graph distance, fused |
 | **LangMem** | LangGraph `BaseStore` | hot-path tools and/or a background memory manager | *profile* (one schema) or *collection* (many items) | store search |
+| **Cognee** | graph + vector + relational, pluggable backends (Neo4j, FalkorDB, Kuzu/LadybugDB…) | an ECL pipeline: *add*, *cognify* (extract a graph), optional *memify* enrichment | re-run the pipeline; enrichment infers new links | graph and vector search combined |
+| **Neo4j Labs `neo4j-agent-memory`** | Neo4j: short-term (messages), long-term (a POLE+O entity graph), *reasoning* memory (decision traces) | extraction pipeline with deduplication | entity merge | Cypher tools, also as an MCP server; a Labs project, so no support guarantees |
+| **Cloud memory services** (Bedrock AgentCore Memory, Vertex AI Memory Bank) | managed store of extracted memory records per scope (user, session) | the service, asynchronously, from stored conversation events | the service consolidates (Memory Bank asks Gemini to merge and resolve contradictions) | similarity search within one scope |
+| **Files the agent edits** (Anthropic memory tool, Letta MemFS, OpenAI Agents SDK sessions for history only) | Markdown files, versioned with git in Letta's case | the agent, with file tools | edit in place, history in git | file search and reads, no vector index by default |
 | **Microsoft GraphRAG** | entity graph + community summaries over a corpus | offline indexing | re-index | local, global, DRIFT; LazyGraphRAG defers summarization to query time |
 
 Graphiti is the closest relative: also a temporal knowledge graph on Neo4j, with episodes as
@@ -522,6 +530,16 @@ provenance. The main differences here are:
 
 Letta's sleep-time agents and our background extractor plus `consolidate()` solve the same
 problem: memory work that shouldn't slow down the reply.
+
+Neo4j's own Labs package is the closest *on the same database*. Its three layers map onto
+ours: short-term messages ≈ the checkpointer plus `Episode` nodes, long-term entity graph ≈
+the life graph, reasoning memory ≈ nothing here (we don't store the agent's own decision
+traces; [Lesson 18](../lessons/18-seeing-memory-work.md)'s trace is shown, not stored).
+
+The 2026 trend is in two directions at once: cloud platforms hide memory behind an API with
+scopes and similarity search, while coding agents move memory into plain files the model edits.
+Both drop the graph. Keep one when your questions are about *relationships and time*, which a
+companion's are.
 
 *Checked against public documentation in November 2026. Sources are listed at the end of the
 [glossary](glossary.md#sources-checked).*

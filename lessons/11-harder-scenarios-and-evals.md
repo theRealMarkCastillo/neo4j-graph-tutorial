@@ -350,4 +350,11 @@ The scenarios caught two more problems after the prompt and gate changes, both w
 - Small embedding models compress scores: prefer relative thresholds.
 - Test memory with multi-session scenarios that check both the graph and the replies, and read the transcripts.
 
-Next: [Lesson 12 — an ontology for the life graph](12-ontology.md) replaces the hand-written relation groups with a real vocabulary and rules.
+## Next
+
+[Lesson 12 — an ontology for the life graph](12-ontology.md) replaces the hand-written relation groups with a real vocabulary and rules.
+
+<!-- nav -->
+---
+
+[← Lesson 10: Recall, the LangGraph companion, and the terminal chat](10-companion-recall-and-chat.md) · [All lessons](../README.md#lessons) · [Lesson 12: An ontology for the life graph →](12-ontology.md)

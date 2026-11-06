@@ -38,7 +38,7 @@ def client(store, driver, monkeypatch):
         yield c
 
 
-def wait_for_memories(client, timeout=10.0) -> list[str]:
+def wait_for_memories(client, timeout=60.0) -> list[str]:  # remote embeddings can take seconds
     lines, end = [], time.time() + timeout
     while time.time() < end:
         r = client.get("/api/log").json()

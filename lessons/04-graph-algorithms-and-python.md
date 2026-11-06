@@ -179,3 +179,12 @@ Three driver patterns:
 | "Similar to" | `gds.nodeSimilarity`, `gds.knn` |
 | Paths | `gds.shortestPath.dijkstra`, `gds.allShortestPaths` |
 | Clean up | `CALL gds.graph.drop('name')` |
+
+## Next
+
+[Lesson 5](05-vectors-and-graphrag.md) adds meaning: vectors on nodes, and GraphRAG that starts from a vector match and follows the graph from there.
+
+<!-- nav -->
+---
+
+[← Lesson 3: Modeling and performance](03-modeling-and-performance.md) · [All lessons](../README.md#lessons) · [Lesson 5: Vector search and GraphRAG →](05-vectors-and-graphrag.md)

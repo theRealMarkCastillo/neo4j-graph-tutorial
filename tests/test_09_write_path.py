@@ -197,12 +197,14 @@ def test_a_placeholder_is_renamed_even_without_a_ref(store):
 
 
 def test_a_real_name_is_never_replaced(store):
-    """A role ("Mom") or a nickname ("Bob") for a named person becomes an alias only."""
-    store.apply(Extraction(entities=[EntityOut(name="Robert", kind="person")]), today=T)
-    rob = entities(store)["Robert"]["id"]
-    store.apply(Extraction(entities=[EntityOut(name="Dad", kind="person", ref=rob)]), today=T)
-    store.apply(Extraction(entities=[EntityOut(name="Bob", kind="person", ref=rob)]), today=T)
-    assert {n: sorted(e["aliases"]) for n, e in entities(store).items()} == {"Robert": ["Bob", "Dad"]}
+    """A role ("Dad") or a nickname ("Mike") for a named person becomes an alias only.
+    (Not "Bob" for "Robert": Qwen scores that pair just under its name cut, a known miss
+    listed in test_19's KNOWN_MISSES. Mike ~ Michael clears it on both models.)"""
+    store.apply(Extraction(entities=[EntityOut(name="Michael", kind="person")]), today=T)
+    mike = entities(store)["Michael"]["id"]
+    store.apply(Extraction(entities=[EntityOut(name="Dad", kind="person", ref=mike)]), today=T)
+    store.apply(Extraction(entities=[EntityOut(name="Mike", kind="person", ref=mike)]), today=T)
+    assert {n: sorted(e["aliases"]) for n, e in entities(store).items()} == {"Michael": ["Dad", "Mike"]}
 
 
 @pytest.mark.parametrize("name,role", [("Mom", True), ("my boss", True), ("Mark's son", True),

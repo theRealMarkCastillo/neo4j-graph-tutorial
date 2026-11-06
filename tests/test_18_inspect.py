@@ -10,6 +10,7 @@ import datetime as dt
 
 from test_17_web import D1, client, wait_for_memories  # noqa: F401  (client is a fixture)
 
+from companion.embeddings import PROFILE
 from companion.models import EntityOut, Extraction, MemoryOut, RelationOut
 
 
@@ -48,7 +49,7 @@ def test_the_second_mention_is_reinforced_and_says_how_similar_it_was(client):
     r = finished_turn(client, 2)
 
     log = r["turn"]["extraction"]["log"]
-    assert any(line.startswith("reinforced") and "similarity 1.000 ≥ 0.975" in line for line in log), log
+    assert any(line.startswith("reinforced") and f"similarity 1.000 ≥ {PROFILE.duplicate}" in line for line in log), log
     # the extractor was shown what's already known, with ids it can reuse
     assert any(c["text"] == "Pytest adopted a cat named Miso" for c in r["turn"]["extraction"]["candidates"])
     # recall found Miso through the graph hop, so the page lights Miso up
@@ -128,4 +129,4 @@ def test_reasons_in_the_store_log(store):
     assert again[0].startswith("reinforced") and '"Pytest plays the cello"' in again[0]
     other = store.apply(Extraction(memories=[MemoryOut(text="Pytest likes hiking", kind="preference",
                                                        importance=5)]), today=D1)
-    assert "[new: closest known 0." in other[0] and "< 0.975]" in other[0]
+    assert "[new: closest known 0." in other[0] and f"< {PROFILE.duplicate}]" in other[0]

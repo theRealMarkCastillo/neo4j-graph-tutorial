@@ -149,7 +149,7 @@ knows today's date and the prompt forbids relative dates.
 |---|---|---|---|---|
 | A separate extractor LLM call after the reply | chat stays focused; facts said in passing are caught | one extra call per turn | a `save_memory` tool for the chat model (hot path) | [D6](../docs/design-decisions.md#d6) |
 | Entity resolution as a cascade: id ref → name/alias → embedding + name check | cheap and certain checks first, fuzzy ones last | thresholds per embedding model; English role names | LLM judges every match; string matching only | [D7](../docs/design-decisions.md#d7) |
-| Supersede and reinforce instead of overwrite or append | history survives, copies don't pile up | graph grows; reads filter current | overwrite; Mem0-style ADD/UPDATE/DELETE decided by the LLM | [D8](../docs/design-decisions.md#d8) |
+| Supersede and reinforce instead of overwrite or append | history survives, copies don't pile up | graph grows; reads filter current | overwrite (the LLM picks ADD/UPDATE/DELETE, as in Mem0 1.x); append-only and resolve conflicts at read time (Mem0 2.0) | [D8](../docs/design-decisions.md#d8) |
 
 ## Test it — [`tests/test_09_write_path.py`](../tests/test_09_write_path.py)
 
@@ -206,3 +206,12 @@ ORDER BY ep.started_at
 2026-11-05T12:00Z, 8, TRUE
 2026-11-13T12:00Z, 6, FALSE
 ```
+
+## Next
+
+[Lesson 10](10-companion-recall-and-chat.md) builds the read path: recall those memories on every turn, and chat with a companion that uses them.
+
+<!-- nav -->
+---
+
+[← Lesson 8: Designing memory for an AI assistant / companion](08-memory-design-for-companions.md) · [All lessons](../README.md#lessons) · [Lesson 10: Recall, the LangGraph companion, and the terminal chat →](10-companion-recall-and-chat.md)

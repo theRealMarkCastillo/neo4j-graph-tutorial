@@ -234,3 +234,8 @@ extractor. The test is about timing, so a real LLM would only add cost and varia
 ## Next
 
 [Lesson 15](15-graph-embeddings.md) uses Graph Data Science on the life graph to find who belongs together.
+
+<!-- nav -->
+---
+
+[← Lesson 13: Memory over time: expiry, decay and consolidation](13-memory-over-time.md) · [All lessons](../README.md#lessons) · [Lesson 15: Graph embeddings: who and what belong together? →](15-graph-embeddings.md)
