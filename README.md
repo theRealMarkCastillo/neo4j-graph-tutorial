@@ -32,6 +32,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | 10 | [Recall and the companion chat](lessons/10-companion-recall-and-chat.md) | Hybrid recall, LangGraph companion, terminal CLI, two-session demo |
 | 11 | [Harder scenarios and evals](lessons/11-harder-scenarios-and-evals.md) | Context-window + end-of-episode extraction, same-name people, ended relations, history, forgetting, sensitive memories, scenario tests |
 
+**Architecture:** component, LangGraph, sequence, data-model and lifecycle diagrams for the
+agent and the companion are in [docs/architecture.md](docs/architecture.md).
+
 ## LLM settings (lessons 7–10)
 
 Any OpenAI-compatible endpoint with tool calling works (OpenAI, DeepInfra, OpenRouter,
@@ -62,6 +65,7 @@ Embeddings run locally (`BAAI/bge-small-en-v1.5` via fastembed), no key needed.
 | `team_agent.py` | Lesson 7 — LangGraph agent with graph tools |
 | `companion/` | Lessons 8–10 — memory schema, store, extraction, LangGraph companion, CLI, demo |
 | `companion/scenarios.py` | Lesson 11 — multi-session scenario tests for memory |
+| `docs/architecture.md` | Architecture diagrams (Mermaid) for lessons 7–11 |
 | `lessons/outputs/` | Recorded runs for lessons 7, 10 and 11 |
 
 ## Common commands
