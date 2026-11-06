@@ -8,6 +8,7 @@ one sense per row. The reasons behind each design choice, and the alternatives, 
 [design-decisions.md](design-decisions.md).
 
 **Jump to:** [Kinds of memory](#kinds-of-memory) · [Where memory lives](#where-memory-lives) ·
+[Layers](#layers) ·
 [Graph modeling](#graph-modeling) · [Ontology terms](#ontology-terms) ·
 [Extraction](#extraction-text--structure) · [Retrieval](#retrieval) ·
 [Time and change](#time-and-change) · [Memory upkeep](#memory-upkeep-and-quality) ·
@@ -61,6 +62,42 @@ This repo is token-level memory with factual and experiential functions.
 | **MemGPT / Letta memory tiers** | *Core* memory (always in context), *recall* memory (conversation history), *archival* memory (searchable store) | Our "core profile" ≈ core memory; our `recall()` is **not** MemGPT's recall memory | our `recall()` function |
 | **Hot path vs background memory** | Writing memories during the reply (agent calls a tool) vs after/outside it | Our extractor runs after the reply; [Lesson 11](../lessons/11-harder-scenarios-and-evals.md) compares both | synchronous vs async (a background writer can still be synchronous) |
 | **Profile vs collection memory** (LangMem) | One document updated in place vs many small memories | We use a collection (Memory nodes) + a derived core profile | — |
+
+## Layers
+
+"Layer" is used loosely, and some layer names are used by several fields with different
+meanings. These are the **logical** layers of the companion, bottom to top. They are not
+deployment tiers: layers 1–5 all live in one Neo4j database.
+
+| # | Layer | Holds | In this repo | Standard term | Often confused with |
+|---|---|---|---|---|---|
+| 1 | **Storage** | Bytes, indexes, transactions | Neo4j, its vector indexes | storage engine, database | the knowledge graph (the engine vs its content) |
+| 2 | **Schema** (data model) | The *shape* of data: labels, properties, constraints, indexes | `companion/schema.py`, the `Extraction` model (Lesson 8) | schema, data model | the ontology (shape vs meaning) |
+| 3 | **Ontology** | The *meaning* of types: which relations and kinds exist, their hierarchy and rules | Relation types as `(:RelType)` nodes with `SUBTYPE_OF` and rules; entity kinds (`person`, `pet`, `place`…) in `companion/models.py` and each node's `kind` (Lesson 12) | ontology layer, **TBox** (terminology) | a schema; a taxonomy (the is-a tree only) |
+| 4 | **Facts** | Statements about individuals | `Entity` nodes and `RELATED` edges: the life graph | instance layer, **ABox** (assertions), the knowledge graph's data | memories (sentences, layer 5) |
+| 5 | **Memory** | What was said and when: sentences pointing at the facts' entities, episodes, transcripts | `Memory`, `Episode`, `Turn` nodes, linked by `ABOUT` and `FROM` (Lessons 8–9) | episodic + semantic memory (psychology sense) | a "memory layer" product (all of 1–6 sold as a service) |
+| 6 | **Retrieval** | Choosing what is relevant now | `recall()`: vectors, the graph hop and its links, the ontology's groups (Lessons 10, 20) | retrieval, hybrid search, local GraphRAG | the LLM's own recall |
+| 7 | **Context** | What the model actually reads | `format_context()` → the memory block in the system prompt | context engineering, RAG | memory (only what's loaded *now*) |
+
+Layers 3 and 4 together are a **knowledge graph** ([sense 1](#knowledge-graph)): facts typed by
+an ontology. Lesson 12's "two layers" are these two.
+
+**Names this repo doesn't use for its own layers:**
+
+- **Semantic layer.** In BI and data warehousing, governed definitions of metrics and
+  dimensions over the warehouse (dbt, LookML, Snowflake semantic models). Vendors in
+  2025–26 also use it for "whatever metadata an agent can read", usually a schema plus an
+  ontology plus business definitions. Neither is a layer here. The closest is layer 3, the
+  ontology: an agreed meaning for relation types. See [semantic, sense 4](#semantic).
+- **Memory layer.** A product category (Mem0, Zep) that bundles layers 1–6 behind an API.
+  This repo builds those layers itself. See the [usage table](#academic-industry-and-marketing-usage).
+- **Data / logic / presentation** (three-tier architecture). A deployment split, orthogonal
+  to the layers above: Neo4j is the data tier, `companion/` the logic tier, the web UI the
+  presentation tier.
+
+Other "layers" in the lessons are different things: the **three test layers** (unit, db,
+llm; Lesson 0) and the **three layers of Neo4j's agent-memory package** (short-term,
+long-term, reasoning; [design-decisions](design-decisions.md#how-other-memory-systems-choose)).
 
 ## Graph modeling
 
@@ -317,8 +354,8 @@ with "general-fact", it's sense 1.
 **Watch out:** schema = *shape* (labels, properties, constraints). Ontology = *meaning* (what
 `sister` is, that it implies `sibling`, that `lives_in` holds one place at a time). An
 ontology also differs from a *taxonomy* (only the is-a tree) and from a *knowledge graph*
-(the facts the ontology describes). In TBox/ABox terms: the ontology is the TBox, the life
-graph the ABox.
+(the facts the ontology describes). In TBox/ABox terms: the ontology is the TBox (relation types *and*
+entity kinds), the life graph the ABox. See [Layers](#layers).
 
 ### knowledge graph
 

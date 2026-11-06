@@ -4,7 +4,7 @@ This page shows *how* the pieces fit. *Why* each is built this way, with alterna
 tradeoffs, is in [design-decisions.md](design-decisions.md); overloaded terms are in the
 [glossary](glossary.md#words-with-several-meanings).
 
-Diagrams for the code in Lessons 7–17. They are [Mermaid](https://mermaid.js.org/), which
+Diagrams for the code in Lessons 7–20. They are [Mermaid](https://mermaid.js.org/), which
 GitHub renders inline.
 
 | # | Diagram | Type |
@@ -32,6 +32,8 @@ GitHub renders inline.
 | 21 | [Graph embeddings — from graph to related pairs](#21-graph-embeddings--from-graph-to-related-pairs) | flowchart |
 | 22 | [Personas — who sees what](#22-personas--who-sees-what) | flowchart |
 | 23 | [Web UI — components](#23-web-ui--components) | component |
+| 24 | [Layers of the companion](#24-layers-of-the-companion) | layered |
+| 25 | [Growing the graph — links, evidence and recall](#25-growing-the-graph--links-evidence-and-recall) | graph |
 
 Terms used here are defined in the [glossary](glossary.md).
 
@@ -601,7 +603,11 @@ flowchart TD
 
 ## 16. Ontology — two layers in Neo4j
 
-The **TBox** (types and rules) and the **ABox** (facts) live in the same database. Each
+The **TBox** (types and rules: the *ontology layer*) and the **ABox** (facts: the *instance
+layer*) live in the same database ([all the layers](#24-layers-of-the-companion)). The TBox has
+two parts: relation types, stored as `:RelType` nodes below, and entity kinds (`person`,
+`pet`, `place`…), which live in code (`companion/models.py`) and in each entity's `kind`
+property, and which `range` rules refer to. Each
 `RELATED` edge's `type` property names a `:RelType`. Recall asks the TBox which types count
 as "family" (`-[:SUBTYPE_OF*]->(:RelType {name:'family'})`), then reads the ABox; inference
 composes brother ∘ daughter into the dotted niece edge, which is never stored.
@@ -774,3 +780,53 @@ flowchart LR
     worker --> llm
     browser -. "poll GET /api/log<br/>while busy" .-> api
 ```
+
+---
+
+## 24. Layers of the companion
+
+Logical layers, bottom to top, with the standard term for each. Layers 1–5 are one Neo4j
+database. The [glossary](glossary.md#layers) says what each name means and which names
+(*semantic layer*, *memory layer*) this repo doesn't use for its own layers.
+
+```mermaid
+flowchart BT
+    storage["1 · Storage<br/>Neo4j, vector indexes"]
+    schema["2 · Schema (shape)<br/>labels, properties, constraints<br/>schema.py · Extraction model"]
+    onto["3 · Ontology (TBox)<br/>relation types + rules as :RelType<br/>entity kinds in models.py"]
+    facts["4 · Facts (ABox)<br/>:Entity + RELATED = the life graph"]
+    memory["5 · Memory<br/>:Memory -ABOUT-> :Entity<br/>:Episode, :Turn"]
+    retrieval["6 · Retrieval<br/>recall(): vectors + graph hop + links + ontology groups"]
+    context["7 · Context<br/>format_context() → memory block in the prompt"]
+    storage --> schema --> onto --> facts --> memory --> retrieval --> context
+    onto -. "types and checks" .-> facts
+    memory -. "evidence (r.evidence)" .-> facts
+```
+
+Layers 3 + 4 make the knowledge graph. The extractor (Lesson 9) writes into layers 4 and 5
+and is checked against 2 and 3. Recall reads 3, 4 and 5.
+
+---
+
+## 25. Growing the graph — links, evidence and recall
+
+[Lesson 20](../lessons/20-growing-the-life-graph.md). Edges between entities, not only from
+the user. Each edge lists the memories about *both* its ends as evidence, and ends when all
+of them are retired. Recall walks at most two links from a matched entity, never through the
+user or a protected entity.
+
+```mermaid
+flowchart LR
+    U(["User"]) -- "son" --> L["Logan"]
+    L -- "likes<br/>evidence: [m2]" --> M["Minecraft"]
+    L -- "friend" --> X["Max"]
+    X -- "pet" --> B["Biscuit"]
+    m1["m1: Guest has a son named Logan"] -. ABOUT .-> U
+    m1 -. ABOUT .-> L
+    m2["m2: Logan loves Minecraft"] -. ABOUT .-> L
+    m2 -. ABOUT .-> M
+    q{{"recall: 'what should I get Logan?'<br/>matches Logan → walks ≤ 2 links"}} --> L
+```
+
+Written to the prompt as "How they connect": *Logan (your son) likes Minecraft*, *Max is
+Logan (your son)'s friend*, *Biscuit is Max's pet*.

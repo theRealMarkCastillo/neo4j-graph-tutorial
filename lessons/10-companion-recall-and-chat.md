@@ -59,7 +59,7 @@ START ──► recall ──► respond ──► remember ──► END
 > adds an end-of-episode extraction pass, and fixes gaps found by scenario tests. The outputs
 > below were recorded with the Lesson 10 version.
 
-| Node | Does | Memory layer |
+| Node | Does | Which memory |
 |---|---|---|
 | `recall` | `store.recall(last message)` → formatted memory block | long-term (Neo4j) |
 | `respond` | persona + memory block + last 16 messages → LLM | short-term (checkpointer) |

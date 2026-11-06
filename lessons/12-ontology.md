@@ -27,10 +27,19 @@ is the kind of knowledge (sense 1), and "searched with vectors" is what products
 
 ## The two layers
 
-| Layer | Holds | Example |
-|---|---|---|
-| **Ontology (TBox)** | types and rules | `sister` SUBTYPE_OF `sibling` SUBTYPE_OF `family`; `sibling` is symmetric; `lives_in` is one at a time |
-| **Facts (ABox)** | statements about individuals | `Riley -sister-> Maya` |
+An ontology separates what the *types* mean from the *facts* that use them. Description
+logic calls the two layers the **TBox** (terminology) and the **ABox** (assertions); data
+people say *ontology layer* and *instance layer*.
+
+| Layer | Holds | Example | Stored as |
+|---|---|---|---|
+| **Ontology (TBox)** | types and rules | `sister` SUBTYPE_OF `sibling` SUBTYPE_OF `family`; `sibling` is symmetric; `lives_in` is one at a time; `pet` points at a `pet` | relation types: `(:RelType)` nodes. Entity kinds (`person`, `pet`, `place`…): code (`companion/models.py`) and each node's `kind` |
+| **Facts (ABox)** | statements about individuals | `Riley -sister-> Maya`; Maya is a `person` | `(:Entity)` nodes and `RELATED` edges: the life graph |
+
+Together they make the knowledge graph. They are two of the companion's seven layers: below
+them are storage and the schema (the *shape* of data, not its meaning), above them the
+memories, retrieval and the prompt. The glossary's [Layers](../docs/glossary.md#layers) lists
+all seven, and says why this repo has no *semantic layer* in the BI sense.
 
 Both live in Neo4j. Diagrams: [architecture §15–16](../docs/architecture.md#15-ontology--how-a-relation-is-stored).
 

@@ -16,9 +16,11 @@ at the first hop:
 
 A life graph that only fans out from the user is just a contact list with notes attached.
 This lesson makes it grow outward: Logan → Minecraft, Logan → his friend Max → Max's dog.
-It also makes it stay correct as it grows and lets recall walk it. All of it goes through the
-same three layers as before: the extraction prompt (Lesson 9), the ontology (Lesson 12) and
-the store's rules (Lessons 9 and 13).
+It also makes it stay correct as it grows and lets recall walk it. The changes land in three
+places you already know: the extraction prompt (Lesson 9), the ontology (Lesson 12) and the
+store's write, recall and upkeep code (Lessons 9, 10 and 13). In terms of the
+[layers](../docs/glossary.md#layers), the graph grows in the facts layer (ABox), the ontology
+layer (TBox) gets one new rule, and the memory layer is linked to the facts more tightly.
 
 | Gap | Where | Fix |
 |---|---|---|

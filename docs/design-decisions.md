@@ -7,7 +7,7 @@ constraints differ.
 
 How to read it:
 
-- Each decision has an id (**D1**–**D20**). The lessons link here from their *Design choices*
+- Each decision has an id (**D1**–**D21**). The lessons link here from their *Design choices*
   sections.
 - **Chose / Why / Costs / Alternatives / Revisit when**: the last item is the signal that our
   choice has stopped fitting.
@@ -18,14 +18,17 @@ How to read it:
 **Jump to:** [The pipeline as concepts](#the-pipeline-as-concepts) ·
 [Storage](#storage-and-data-model) (D1–D5) · [Writing](#writing-memories) (D6–D9) ·
 [Reading](#reading-memories) (D10–D13) · [Time](#time) (D14–D15) ·
-[Operations](#operations-privacy-and-quality) (D16–D20) · [Gaps](#gaps-what-this-design-does-not-cover) ·
+[Operations](#operations-privacy-and-quality) (D16–D20) ·
+[Growing the graph](#growing-the-graph) (D21) · [Layers](glossary.md#layers) · [Gaps](#gaps-what-this-design-does-not-cover) ·
 [Other systems](#how-other-memory-systems-choose)
 
 ---
 
 ## The pipeline as concepts
 
-One chat turn, step by step, with the field each idea comes from. The vocabulary of agent
+One chat turn, step by step, with the field each idea comes from. Where each step's data sits
+is in the glossary's [layers](glossary.md#layers): storage, schema, ontology (TBox), facts
+(ABox), memory, retrieval, context. The vocabulary of agent
 memory is borrowed from at least six fields, and much of the confusion comes from mixing them.
 
 | Step | What the code does | Concept | Field it comes from | Lesson |
@@ -249,7 +252,9 @@ delete (D18), because retiring isn't forgetting.
 inverses, cardinality and range rules, plus a few kinship compositions. It is copied to
 `(:RelType)` nodes so Cypher can use it (Lesson 12). Unknown types are kept and *proposed* for
 review. *Ontology* here means sense 2 in the [glossary](glossary.md#ontology): typed relations
-with rules, not OWL.
+with rules, not OWL. It is the TBox, the *ontology layer*; the life graph it types is the ABox
+([layers](glossary.md#layers)). Entity kinds belong to the TBox too, but stay in code
+(`models.py`) and on each node's `kind`, not as nodes.
 
 **Why:** LLMs write `girlfriend` one day and `partner` the next. Without a vocabulary, "anyone
 in my family?" and "a person lives in one place at a time" can't be answered or enforced.
@@ -479,6 +484,10 @@ need several runs.
   Most published scores are self-reported by vendors.
 - Online metrics from real users (corrections, "you already told me").
 
+
+---
+
+## Growing the graph
 
 <a id="d21"></a>
 ### D21. Grow the graph past the user, with bounded walks and edge provenance

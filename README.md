@@ -34,6 +34,10 @@ explain the design rather than the code:
 - **[The pipeline as concepts](docs/design-decisions.md#the-pipeline-as-concepts)**: each step
   of a chat turn mapped to its concept and the field it comes from (psychology, NLP,
   databases, information retrieval, knowledge representation).
+- **[Layers](docs/glossary.md#layers)**: the companion's seven logical layers (storage, schema,
+  ontology/TBox, facts/ABox, memory, retrieval, context), with the standard term for each and
+  what *semantic layer* and *memory layer* mean elsewhere. Diagram:
+  [architecture §24](docs/architecture.md#24-layers-of-the-companion).
 - **[Glossary](docs/glossary.md)**: terms that mean different things in different fields.
   *[Semantic](docs/glossary.md#semantic)*, *[ontology](docs/glossary.md#ontology)*,
   *[recall](docs/glossary.md#recall)*, *[profile](docs/glossary.md#profile)* and others have
