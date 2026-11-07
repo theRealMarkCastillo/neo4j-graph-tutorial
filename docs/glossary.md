@@ -188,8 +188,9 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **Relation extraction** | Finding typed links between entities | `relations` in the extraction | — |
 | **Coreference resolution** | Working out what pronouns refer to ("she" → Priya) | Earlier turns given as context ([Lesson 11](../lessons/11-harder-scenarios-and-evals.md)) | entity resolution |
 | **Entity resolution / linking / record linkage** | Deciding two mentions are the same real-world thing | `resolve_entity()`: ref, name/alias, embedding + name similarity | deduplication of *memories* |
-| **Deduplication** | Not storing the same fact twice | index score ≥ the model's `duplicate` threshold (0.975 for bge-small) + same dates → reinforce | supersession (a *change*, not a copy) |
+| **Deduplication** | Not storing the same fact twice | index score ≥ the model's `duplicate` threshold (0.975 for bge-small) + same dates + entity veto → reinforce | supersession (a *change*, not a copy) |
 | **Structured output / function calling** | Making the LLM return data matching a schema | `with_structured_output(Extraction, method="function_calling")` | JSON mode (no schema guarantee) |
+| **Entity veto** | All old non-user ABOUT entities must be in the new ABOUT before wording may match | Stored duplicates, repeats in one extraction, and forget tombstones ([D22](design-decisions.md#d22)); empty sets leave wording to decide | Entity resolution, which decides whether two mentions name the same entity |
 
 ## Retrieval
 

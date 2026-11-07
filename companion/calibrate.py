@@ -9,6 +9,9 @@ score ranges, how many pairs the profile's current threshold gets right, and the
 separates them best (the middle of the gap when there is one). The numbers go into the model's
 Profile, then the scenarios (python -m companion.scenarios) check them end to end.
 
+The duplicate and forgotten NO pairs about different entities also have a structural veto
+in the write path. These cuts still matter for user-only memories without such entities.
+
 The pairs are cases that went wrong once (the comments in store.py) plus their near misses.
 Add the case when you find a new failure: the next model you try will be measured on it too.
 """

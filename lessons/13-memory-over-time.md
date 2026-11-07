@@ -188,7 +188,9 @@ activity is an entity, and a habit is a count. The full analysis is in
 - **A trip almost moved the user.** "I'm in Denver for the week" came back with
   `user -lives_in-> Denver`. Because `lives_in` is one-at-a-time (Lesson 12), that would end
   their real home. Adding a prompt *rule* didn't change the output; a prompt *example* did. A
-  store guard now also ignores a one-at-a-time relation that only a status mentions.
+  store guard now also ignores a one-at-a-time relation that only temporary memories mention.
+  It reads expiry through `clock.parse_until`, including the default status expiry: an `event`
+  with `valid_until` protects the real home too.
   Again: let code back up the prompt where a mistake is costly.
 - **Pruning ate the pattern.** The first version pruned a minor status after ~2 days, before
   three visits could pile up over a week. It also deleted pattern members, so the scenario's

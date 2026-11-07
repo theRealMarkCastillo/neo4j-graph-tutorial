@@ -458,3 +458,17 @@ def test_pattern_writer_declines_coincidences(llm_ready):
     p = find_pattern("Riley", ["Riley is at the airport", "Riley is at the dentist",
                                "Riley is at the post office"], D1)
     assert p is None, p
+
+
+def test_a_trip_filed_as_an_event_does_not_end_the_real_home(store):
+    from companion.models import EntityOut, RelationOut
+    store.apply(Extraction(entities=[EntityOut(name="Chicago", kind="place")],
+                           relations=[RelationOut(source="user", target="Chicago", type="lives_in")]), today=D1)
+    log = store.apply(Extraction(
+        entities=[EntityOut(name="Denver", kind="place")],
+        relations=[RelationOut(source="user", target="Denver", type="lives_in")],
+        memories=[mem("Pytest is in Denver for work this week", "event", 3, about=["user", "Denver"],
+                      valid_until="2026-11-22T23:59")]), today=D1)
+    assert any(line.startswith("ignored") for line in log), log
+    homes = store._q("MATCH (:User {id:$user})-[r:RELATED {type:'lives_in'}]->(e) WHERE r.until IS NULL RETURN e.name AS n")
+    assert homes == [{"n": "Chicago"}]

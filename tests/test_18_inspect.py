@@ -38,7 +38,7 @@ def test_a_turn_shows_recall_the_prompt_and_the_reasons_for_each_write(client):
     assert x["status"] == "done" and x["llm_ms"] >= 0 and x["write_ms"] >= 0
     assert len(x["extracted"]["memories"]) == 2
     new = [line for line in x["log"] if line.startswith("+ [event]")]
-    assert new and "[new: nothing similar with the same dates]" in new[0]  # the reason, not just the result
+    assert new and "[new: nothing similar with the same dates and entities]" in new[0]  # the reason, not just the result
 
 
 def test_the_second_mention_is_reinforced_and_says_how_similar_it_was(client):
@@ -124,7 +124,7 @@ def test_reasons_in_the_store_log(store):
     """The reasons come from MemoryStore itself, so the terminal chat shows them too."""
     fact = MemoryOut(text="Pytest plays the cello", kind="fact", importance=5)
     first = store.apply(Extraction(memories=[fact]), today=D1)
-    assert first == ["+ [fact] Pytest plays the cello  [new: nothing similar with the same dates]"]
+    assert first == ["+ [fact] Pytest plays the cello  [new: nothing similar with the same dates and entities]"]
     again = store.apply(Extraction(memories=[fact, fact]), today=D1)
     assert again[0].startswith("reinforced") and '"Pytest plays the cello"' in again[0]
     other = store.apply(Extraction(memories=[MemoryOut(text="Pytest likes hiking", kind="preference",

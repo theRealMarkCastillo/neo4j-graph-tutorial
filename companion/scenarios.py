@@ -37,6 +37,8 @@ class Run:
     replies: list[list[str]] = field(default_factory=list)  # per session, per message
     extracted: list[list[bool]] = field(default_factory=list)  # did `remember` run for each message?
 
+    logs: list[str] = field(default_factory=list)  # writes, including memories later pruned
+
     def q(self, cypher: str, **params) -> list[dict]:
         return self.store._q(cypher, **params)
 
@@ -45,6 +47,15 @@ class Run:
 
     def mentions(self, text: str, *words: str) -> bool:
         return any(w.lower() in text.lower() for w in words)
+
+
+def stored_temporary(run: Run, activity: str) -> bool:
+    """A write-time expiry survives pruning in the run log.
+
+    Logs have no ABOUT ids; use the activity's name as a fallback for deleted memories.
+    """
+    return any(line.startswith("+ [") and "(until " in line
+               and activity.casefold() in line.casefold() for line in run.logs)
 
 
 @dataclass
@@ -295,7 +306,7 @@ SCENARIOS = [
                 r.stores["Coach"].recall("how do I feel before big races?", today=D(2026, 11, 19)),
                 D(2026, 11, 19)).lower()),
             ("Coach's replies use the race and never mention panic or anxiety", lambda r:
-                r.mentions(" ".join(r.replies[1]), "marathon", "half", "race")
+                r.mentions(" ".join(r.replies[1]), "marathon", "half", "race", "Chicago")
                 and not r.mentions(" ".join(r.greetings[1:] + r.replies[1]), "panic", "anxi")),
         ],
     ),
@@ -309,14 +320,14 @@ SCENARIOS = [
             (D(2026, 11, 23), ["Gym again before work today, trying to keep the streak going."]),
         ],
         [
-            ("the gym was stored as a status that expires", lambda r: bool(r.q(
-                "MATCH (m:Memory {user:$user}) WHERE toLower(m.text) CONTAINS 'gym' AND m.valid_until IS NOT NULL RETURN m"))),
+            ("the gym was stored with an expiry", lambda r: stored_temporary(r, "gym")),
             ("the next day nothing says they're at the gym now", lambda r: not any(
                 "gym" in m["text"].lower() and m["kind"] == "status" for m in r.store.memories(today=D(2026, 11, 19)))),
             ("the next day's greeting asks about the gym", lambda r: r.mentions(r.greetings[1], "gym", "workout")),
             ("three gym visits became one lasting habit", lambda r: bool(r.q(
-                """MATCH (p:Memory {user:$user}) WHERE p.invalidated_at IS NULL AND p.evidence >= 3
-                     AND p.kind IN ['preference', 'fact'] AND toLower(p.text) CONTAINS 'gym' RETURN p"""))),
+                """MATCH (p:Memory {user:$user})-[:ABOUT]->(:Entity {kind:'activity', name:'gym'})
+                     WHERE p.invalidated_at IS NULL AND p.evidence >= 3
+                     AND p.kind IN ['preference', 'fact'] AND p.valid_until IS NULL RETURN p"""))),
         ],
     ),
 ]
@@ -365,6 +376,7 @@ def run_scenario(driver, sc: Scenario, verbose: bool = True) -> list[tuple[str, 
                         print(f"  {store.agent}: {out['messages'][-1].content}")
                 elif node == "remember":
                     ran = True
+                    run.logs.extend(out["memory_log"])
                     if verbose:
                         for line in out["memory_log"]:
                             print(f"     ✎ {line}")
@@ -372,6 +384,7 @@ def run_scenario(driver, sc: Scenario, verbose: bool = True) -> list[tuple[str, 
             if verbose and not ran:
                 print("     (small talk — extraction skipped)")
         for line in close_episode(store, episode_id, today):
+            run.logs.append(line)
             if verbose:
                 print(f"     ✎ {line}")
     results = []

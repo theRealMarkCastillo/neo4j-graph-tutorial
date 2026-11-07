@@ -549,6 +549,12 @@ threshold and every `kind` switch had the same weakness: it silently depended on
 model words and labels things. Lowering the cut would have passed the test until the next
 model change.
 
+**Second application: entity veto.** Duplicate matching (stored or within one extraction)
+and episode tombstones require all old non-user ABOUT entities to be in the new ABOUT.
+Wording can then decide. Re-reads can add entities; dropping an entity stores a near-copy
+instead of losing a different fact. Legacy tombstones with no entity ids retain their old
+behaviour. The trip guard reads expiry, including the default for statuses.
+
 **Costs:** the extractor must link activities (an eval checks it); two names for one activity
 that never get merged ("gym", "working out") count separately; repeated feelings with no
 activity ("tired" three times) no longer roll up. Similarity thresholds remain where meaning
@@ -577,7 +583,7 @@ Honest limits, and what would fill each one:
 | **Cost control** | One extraction call per turn, one remote embedding call per recall | Cheaper extraction model (`LLM_EXTRACTION_MODEL`), batching, caching, skipping more small talk |
 | **Benchmarks** | Our scenarios aren't comparable with other systems | Run LoCoMo / LongMemEval / BEAM-style suites |
 | **Learned thresholds** | Hand-measured cut-offs per model, on hand-written pairs rather than the extractor's real sentences | Collect labelled pairs from the trace UI and scenario runs, and refit |
-| **Structural dedupe** | A reworded copy of a memory is caught only by cosine ≥ 0.975 (bge) / 0.966 (Qwen), which depends on wording (D22) | Same entities + kind + day as the primary test, similarity as a fallback |
+| **Structural dedupe** | Entity veto and date equality protect stored duplicate matching; user-only memories still depend on wording (D22) | Richer typed identity for facts with no non-user ABOUT entities |
 | **Reasoning memory** | The agent doesn't remember *how* it handled similar requests (which tools, what worked) | Store decision traces as nodes linked to the turn, as Neo4j Labs' `neo4j-agent-memory` does |
 | **Non-English** | Role-name rules and regexes are English | Language-aware rules; multilingual embedding model (Qwen3 is multilingual) |
 

@@ -90,7 +90,7 @@ because two Sams may really be two people (Lesson 11's `same_name` scenario).
 
 | Situation | What happens |
 |---|---|
-| New memory ≥ 0.975 similar to a current one | **reinforce** the old one (`access_count`, `last_confirmed`, max importance) |
+| New memory ≥ 0.975 similar to a current one, same dates, and every old non-user ABOUT entity is in the new ABOUT | **reinforce** the old one (`access_count`, `last_confirmed`, max importance) |
 | Extractor lists `supersedes: [id]` | new memory created, old gets `invalidated_at`, `(new)-[:SUPERSEDES]->(old)` |
 | `invalidate: [id]` | old gets `invalidated_at`, no replacement |
 | `completed_plans: [id]` | plan `status = 'done'` (it stays on the timeline) |
@@ -178,7 +178,8 @@ A code review of the write path produced regression tests. Each one failed befor
 - forgetting "Ann" deleted *"planning an anniversary trip"* (substring match, now whole words);
 - short names ("Jo") and other entities' summaries ("Kai: Jo's brother") weren't redacted;
 - `/forget <id>` didn't stick: the end-of-episode pass re-read the transcript and stored the
-  same fact again. A tombstone (the embedding only, no text) now blocks it for that episode;
+  same fact again. A tombstone (embedding and non-user ABOUT ids, no text) now blocks it for that episode,
+  provided its entities are all named by the new memory;
 - vector searches filtered by user *after* taking the top 5, so other users' memories could
   crowd out the real duplicate. Now they take 50, filter, then keep the top k.
 - "his name is Logan" never reached the graph. The node stayed `Mark's son`: a known entity
@@ -216,6 +217,11 @@ ORDER BY ep.started_at
 ```
 
 > **Later, in [Lesson 20](20-growing-the-life-graph.md):** the extractor only made entities for people, pets, places and organizations, so "Logan loves Minecraft" never became an edge. Lesson 20 widens what deserves a node, adds `evidence` to edges so they end when their memories do, and lets `thing` and `activity` match in entity resolution.
+
+The **entity veto** also protects duplicate matching within an extraction: every old non-user
+ABOUT entity must occur in the new ABOUT before wording can decide a match. A re-read may
+add entities to a known memory. Dropping one stores a near-copy: merging different facts loses
+data, whereas splitting a fact only copies it. User-only memories still depend on wording.
 
 ## Next
 
