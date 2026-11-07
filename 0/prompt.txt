@@ -1,0 +1,7 @@
+<environment_context>
+  <cwd>/Users/markcastillo/git/neo4j-graph-tutorial</cwd>
+  <shell>zsh</shell>
+  <current_date>2026-11-06</current_date>
+  <timezone>America/Los_Angeles</timezone>
+  <filesystem><workspace_roots><root>/Users/markcastillo/git/neo4j-graph-tutorial</root></workspace_roots><permission_profile type="disabled"><file_system type="unrestricted" /></permission_profile></filesystem>
+</environment_context>
