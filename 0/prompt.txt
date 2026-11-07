@@ -1,0 +1,1 @@
+right.. so the idea is that the system will automaticall grow the "life graph" multiple hops
