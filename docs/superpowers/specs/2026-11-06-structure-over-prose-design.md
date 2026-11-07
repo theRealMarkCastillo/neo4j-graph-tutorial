@@ -58,7 +58,13 @@ measured with so drift fails loudly.
 - Occurrence memories: `kind IN ['event', 'status', 'plan', 'feeling']`, current, not
   consolidated, not sensitive, not private, and not a `lapsed` plan. ("Occurrence" vs
   "lasting" is what `kind` means, so this gate stays.)
-- The day of a memory: `coalesce(occurred_on, due_on, date(valid_until), date(created_at))`.
+- The day of a memory: `coalesce(occurred_on, due_on, date(created_at))`, and a memory whose
+  `due_on` is still in the future doesn't count. *Amended after review:* the first version
+  also used `date(valid_until)` and future `due_on`, so one message ("gym Mon, Wed, Fri next
+  week") or one long status could count as several days.
+- Once an activity has a current pattern, new days attach to it (SUMMARIZES, `evidence` =
+  members summarized) without asking the writer again. *Added after review:* new wording
+  rarely cleared the text dedupe, so near-copies of the habit piled up.
 - The writer LLM (`find_pattern`) still writes the habit sentence or declines. The pattern
   memory is `ABOUT` the activity, and `apply()` also adds `user -practices-> activity`.
 - Removed: vector clustering (`_clusters`), `PATTERN_SIMILARITY`, `Profile.pattern`,

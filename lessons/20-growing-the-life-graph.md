@@ -49,6 +49,10 @@ The fix is a sharper rule, not a looser one. Making everything a node ("the rain
 > activity, each with its relation. Generic phrases ("playing in the rain", "a movie") stay
 > in the memory text only.
 
+(Later, the structure-over-prose change, [D22](../docs/design-decisions.md#d22), moved one
+line: activities someone *does*, named or not ("gym", "running"), are now entities too, so
+habits can be counted in the graph. One-off generic things still stay text-only.)
+
 Rule 11 says who the source of the edge is: the person who has the preference.
 
 > "my son Leo loves Minecraft" -> Leo -likes-> Minecraft, not user -likes-> Minecraft.

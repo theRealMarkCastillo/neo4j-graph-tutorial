@@ -134,7 +134,7 @@ Ollama, LM Studio, vLLM...). Set in `.env`:
 | `LLM_BASE_URL` | e.g. `https://api.openai.com/v1`, `http://localhost:11434/v1` |
 | `LLM_MODEL` | chat model name |
 | `LLM_API_KEY` | key (any value for local servers) |
-| `LLM_EXTRACTION_MODEL` | optional, model for memory extraction (defaults to `LLM_MODEL`) |
+| `LLM_EXTRACTION_MODEL` | optional, model for memory extraction (defaults to `LLM_MODEL`). The similarity thresholds were measured on one extraction model's sentences (`extraction_model` in `companion/embeddings.py`); after changing it, re-run `uv run python -m companion.calibrate` and `uv run pytest -m llm`, then update that field ([D22](docs/design-decisions.md#d22)) |
 | `LLM_AGENT_MODEL` | optional, model for the Lesson 7 agent (defaults to `LLM_MODEL`). On Gemini use `gemini-2.5-flash`: Gemini 3 models need a `thought_signature` sent back with tool calls, which the OpenAI-compatible client drops |
 | `LLM_TEMPERATURE` | chat temperature |
 | `COMPANION_USER`, `COMPANION_NAME` | default user and companion names |

@@ -389,10 +389,10 @@ async function drawDiary() {
     r.episodes.map(e => `<tr><td class="dim">${new Date(e.started).toLocaleString([], {dateStyle: "medium", timeStyle: "short"})}</td>` +
       `<td>${e.open ? '<span class="chip">open now</span> ' : ""}${e.summary ? esc(e.summary) + (e.mood ? ` <span class="dim">(mood: ${esc(e.mood)})</span>` : "") : '<span class="dim">no summary yet: written when the episode ends</span>'}</td>` +
       `<td>${e.turns}</td><td>${e.memories}</td></tr>`).join("") + "</table>" +
-    `<h3>Patterns <span class="chip">${r.patterns.length}</span> <span class="why">— 3+ similar memories rolled up into one (Lesson 13)</span></h3>` +
+    `<h3>Patterns <span class="chip">${r.patterns.length}</span> <span class="why">— memories about one activity on 3+ days, rolled up into one (Lesson 13)</span></h3>` +
     (r.patterns.length ? `<ul class="items">${r.patterns.map(p => `<li class="new">${esc(p.text)} <span class="score">evidence ${p.evidence}</span><br>` +
       p.from.map(t => `<span class="dim">· ${esc(t)}</span>`).join("<br>") + "</li>").join("")}</ul>`
-      : '<p class="dim">None yet. They form at the end of an episode, from repeated statuses or events ("at the gym" three times).</p>');
+      : '<p class="dim">None yet. They form at the end of an episode, from an activity mentioned on three different days ("at the gym" on three days).</p>');
 }
 
 $("rgo").onclick = async () => {

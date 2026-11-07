@@ -73,10 +73,11 @@ Which side is which:
 | message → entities (the graph hop) | query → stored |
 | new memory → stored memory (dedupe), tombstone | stored ↔ stored |
 | entity → entity (same person?), name ↔ name | stored ↔ stored |
-| memory ↔ memory (habits, Lesson 13) | both with a *clustering* instruction |
 
-The last row was a surprise, and it's covered under step 3. bge-small has no instructions, so all
-three calls are the same for it.
+
+bge-small has no instructions, so both calls are the same for it. (Habits used to be a third
+row: memory ↔ memory with a *clustering* instruction. Lesson 13 now counts habits in the graph,
+so no embedding is involved; see [D22](../docs/design-decisions.md#d22).)
 
 `embed()` also normalizes every vector to length 1, so a dot product is the cosine. It keeps a
 small cache, because one extraction embeds the same names and summaries several times and a
@@ -84,7 +85,8 @@ remote call takes about 0.3–0.6 s.
 
 ## 3. Every threshold belongs to a model — [`companion/calibrate.py`](../companion/calibrate.py)
 
-The store makes eight yes/no decisions with a similarity cut-off. Each was measured on
+The store makes seven yes/no decisions with a similarity cut-off (there were eight: habits
+used one until they became a graph count). Each was measured on
 bge-small (the comments in `store.py` keep those measurements). Qwen spreads its scores
 differently, so a value that worked for bge-small is wrong for Qwen, and the result fails
 quietly: duplicates pile up, two people merge into one, or a habit is never noticed.
@@ -93,8 +95,8 @@ So each model has a **Profile** with its own numbers:
 
 ```python
 Profile("Qwen/Qwen3-Embedding-8B", dims=4096, duplicate=0.966, forgotten=0.89, entity_match=0.94,
-        name_match=0.84, pattern=0.665, sensitive_floor=0.655, sensitive_margin=0.015,
-        entity_hop=0.62, query_instruction=..., cluster_instruction=...)
+        name_match=0.84, sensitive_floor=0.655, sensitive_margin=0.015,
+        entity_hop=0.62, query_instruction=..., weak_below=0.656)
 ```
 
 A model without a profile is refused at startup, with a message pointing here. The numbers
@@ -120,7 +122,6 @@ What the two models showed:
 | forgotten (tombstone) | cosine | 0.978+ / ≤ 0.887 | 0.925+ / ≤ 0.858 | 0.89 |
 | entity match (same kind) | score | 0.986+ / ≤ 0.946 | 0.949+ / ≤ 0.933 | 0.94 |
 | name match ("Mom" ~ "mother") | cosine | 0.803+ / ≤ 0.681 | 0.768+ / ≤ 0.854 overlap | 0.84 |
-| pattern (same habit) | cosine | 0.805+ / ≤ 0.803 | 0.682+ / ≤ 0.645 (with instruction) | 0.665 |
 | sensitive floor | score | 0.762+ / ≤ 0.737 | 0.695+ / ≤ 0.615 | 0.655 |
 | entity hop ("my kid" → Logan) | score | 0.760+ / ≤ 0.731 | 0.645+ / ≤ 0.592 | 0.62 |
 
@@ -135,12 +136,16 @@ Here's what the table says:
 - **Bare names are Qwen's weak spot.** "Ohio" ~ "Iowa" scores 0.854 and "Liz" ~ "Elizabeth"
   scores 0.768. That's tolerable because the name check never decides alone: it runs only after
   the entity match, and nicknames usually arrive as aliases from the extractor.
-- **Habits needed their own instruction.** Without one, "heading to the gym" vs. "went rock
-  climbing" scored 0.77, higher than two gym sentences (0.73). Complete-linkage clustering
-  (Lesson 13) then can't find the habit at any cut-off. With *"Identify the activity or habit
-  described"* in front of every memory, the gym sentences score 0.68 or more and climbing
-  scores 0.65 or less. Consolidation embeds again with that instruction (the vectors aren't
-  stored).
+- **Habits needed their own instruction**, back when they were found by clustering: without
+  one, "heading to the gym" vs. "went rock climbing" scored 0.77, higher than two gym
+  sentences (0.73). That fragility (a cut that depends on how sentences are worded) is why
+  habits are now counted in the graph instead ([D22](../docs/design-decisions.md#d22)).
+
+**A profile also records the extraction model** (`extraction_model`) its numbers were measured
+with. The thresholds compare sentences the extractor wrote, so a new extraction model can move
+them as much as a new embedding model. Every scenario run checks it ("thresholds measured with
+this extraction model"); after switching `LLM_EXTRACTION_MODEL`, re-run `companion.calibrate`
+and the scenarios, then update the field.
 
 ### "Loosely related", decided by the model itself
 
@@ -274,7 +279,8 @@ A fake endpoint stands in for the remote model. The tests check that:
 - the default model keeps the property and index names Lessons 8–18 use, and Qwen gets its own
   4096-dim indexes;
 - a model with no measured thresholds is refused;
-- a query gets the instruction and stored text doesn't; clustering uses its own instruction;
+- a query gets the instruction and stored text doesn't;
+- a scenario run fails its threshold check when the extraction model isn't the measured one;
 - vectors are unit length, and repeats come from the cache;
 - the active model gets every `duplicate`, `forgotten` and `name_match` calibration pair right,
   except its listed `KNOWN_MISSES` (Qwen: three name pairs, including Bob ~ Robert);
@@ -291,7 +297,7 @@ failed on Qwen. Nine of them were about bge-small, not about memory:
 |---|---|---|
 | a typed threshold (`≥ 0.975` in the log) | Qwen's cut is 0.966 | `PROFILE.duplicate` |
 | the cross-encoder's labels (`relevance < -8.5`; "the reranker misses ADHD") | no cross-encoder: Qwen labels by its own score, and gets ADHD *right* | whichever labeller `relevance_by` names |
-| habit clustering with plain vectors | consolidation uses the cluster instruction | `embed_for_clustering`, and "the three are in one group" |
+| habit clustering with plain vectors | consolidation used a cluster instruction | (since replaced by a graph count, D22) |
 | the `embedding` property, bge-small's profile | Qwen has its own property and profile | the active profile's |
 
 The tenth was real: Qwen scores "Bob" ~ "Robert" at 0.837, under its 0.84 name cut, so "Bob"

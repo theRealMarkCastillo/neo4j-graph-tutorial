@@ -34,6 +34,14 @@ Key prompt rules (see `RULES` in [`companion/extract.py`](../companion/extract.p
 absolute dates, only what the user said, supersede instead of duplicating, list the protected
 person in a boundary's `about`.
 
+Two rules put *identity* in structure rather than wording ([D22](../docs/design-decisions.md#d22)):
+- **A known day goes in its field, not the text** (rule 2): "Riley went to the gym" with
+  `occurred_on`, never "...on 2026-11-20". Prompts and the UI show the day from the field.
+  Vague times with no field ("in the week before 2026-11-20") stay in the text.
+- **Activities someone does are entities** (rule 10): "gym", "running", "yoga" become
+  `activity` entities, and every memory about doing one is `ABOUT` it, whatever the
+  sentence says. Lesson 13 counts habits from those links.
+
 > Lesson 11 adds earlier turns as context, a second pass at the end of each conversation,
 > and new fields: `ref`/`new` on entities, `ended` on relations, `annual_date` and
 > `sensitive` on memories, and `forget_entities`.

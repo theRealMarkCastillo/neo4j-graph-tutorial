@@ -7,7 +7,7 @@ constraints differ.
 
 How to read it:
 
-- Each decision has an id (**D1**–**D21**). The lessons link here from their *Design choices*
+- Each decision has an id (**D1**–**D22**). The lessons link here from their *Design choices*
   sections.
 - **Chose / Why / Costs / Alternatives / Revisit when**: the last item is the signal that our
   choice has stopped fitting.
@@ -19,7 +19,7 @@ How to read it:
 [Storage](#storage-and-data-model) (D1–D5) · [Writing](#writing-memories) (D6–D9) ·
 [Reading](#reading-memories) (D10–D13) · [Time](#time) (D14–D15) ·
 [Operations](#operations-privacy-and-quality) (D16–D20) ·
-[Growing the graph](#growing-the-graph) (D21) · [Layers](glossary.md#layers) · [Gaps](#gaps-what-this-design-does-not-cover) ·
+[Growing the graph](#growing-the-graph) (D21–D22) · [Layers](glossary.md#layers) · [Gaps](#gaps-what-this-design-does-not-cover) ·
 [Other systems](#how-other-memory-systems-choose)
 
 ---
@@ -527,6 +527,38 @@ retirement; older edges stay unprovenanced until a re-extraction touches them.
 queries); reify each edge as a node with `FROM` links (full provenance, double the nodes);
 an agent with a Cypher tool (D19 explains why the companion has none).
 
+<a id="d22"></a>
+### D22. Decide identity in the graph; compare prose only where meaning is fuzzy
+
+**Chose:** decisions about *identity* read structure and typed fields, not sentence wording.
+A known day lives in `occurred_on` / `due_on` / `valid_until`, not in the text (shown from
+the field in prompts and the UI). An activity someone does ("gym", "running") is an `activity`
+entity every memory about it is linked to. A habit is memories `ABOUT` one activity on 3+
+distinct days, counted in Cypher. Pruning reads "temporary" from `valid_until`, the timeline
+reads "dated" from the date fields. Each embedding profile records the extraction model its
+thresholds were measured with (`Profile.extraction_model`), and every scenario run checks it.
+([Lessons 9](../lessons/09-memory-write-path.md) and [13](../lessons/13-memory-over-time.md);
+design notes in `docs/superpowers/specs/2026-11-06-structure-over-prose-design.md`)
+
+**Why:** the extractor is an LLM that can be swapped. When `gemma-4-31B-it` was replaced by
+`gemini-3.8-flash`, the gym habit stopped forming. The new model wrote dated, longer sentences,
+so no pair of gym memories reached the clustering cut (0.82, measured on undated hand-written
+sentences), and a dated rock-climbing memory scored closer to a gym memory than gym memories
+did to each other. It also filed one visit as a `plan`, a kind the clustering skipped. Every
+threshold and every `kind` switch had the same weakness: it silently depended on how one
+model words and labels things. Lowering the cut would have passed the test until the next
+model change.
+
+**Costs:** the extractor must link activities (an eval checks it); two names for one activity
+that never get merged ("gym", "working out") count separately; repeated feelings with no
+activity ("tired" three times) no longer roll up. Similarity thresholds remain where meaning
+really is fuzzy (recall, relevance, entity matching), and those still need re-measuring after
+a model change: the scenario check makes that impossible to miss.
+
+**Alternatives:** keep clustering and re-tune the cut per extraction model (cheap now, breaks
+again later); strip dates before embedding (fixes one cause of drift, not labels or wording);
+let the LLM group memories into habits directly (no threshold, but no guarantee across runs).
+
 ---
 
 ## Gaps: what this design does not cover
@@ -544,7 +576,8 @@ Honest limits, and what would fill each one:
 | **Erasure outside the graph** | Backups, logs, traces, LLM provider retention | Retention policies, log redaction, provider no-retention settings |
 | **Cost control** | One extraction call per turn, one remote embedding call per recall | Cheaper extraction model (`LLM_EXTRACTION_MODEL`), batching, caching, skipping more small talk |
 | **Benchmarks** | Our scenarios aren't comparable with other systems | Run LoCoMo / LongMemEval / BEAM-style suites |
-| **Learned thresholds** | Hand-measured cut-offs per model | Collect labelled pairs from the trace UI and refit |
+| **Learned thresholds** | Hand-measured cut-offs per model, on hand-written pairs rather than the extractor's real sentences | Collect labelled pairs from the trace UI and scenario runs, and refit |
+| **Structural dedupe** | A reworded copy of a memory is caught only by cosine ≥ 0.975 (bge) / 0.966 (Qwen), which depends on wording (D22) | Same entities + kind + day as the primary test, similarity as a fallback |
 | **Reasoning memory** | The agent doesn't remember *how* it handled similar requests (which tools, what worked) | Store decision traces as nodes linked to the turn, as Neo4j Labs' `neo4j-agent-memory` does |
 | **Non-English** | Role-name rules and regexes are English | Language-aware rules; multilingual embedding model (Qwen3 is multilingual) |
 

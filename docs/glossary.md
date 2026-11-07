@@ -229,9 +229,8 @@ See [Lesson 12](../lessons/12-ontology.md).
 | Term | Meaning | In this repo | Often confused with |
 |---|---|---|---|
 | **Consolidation** | Re-processing memories offline: merge, fix, summarize | End-of-episode pass; `consolidate()` rolls repeats into patterns, lapses old plans, prunes trivia ([Lesson 13](../lessons/13-memory-over-time.md)) | summarization alone |
-| **Pattern / roll-up** | One lasting memory standing for many similar ones: episodic → semantic | "works out at the gym regularly", `(pattern)-[:SUMMARIZES]->(member)`, `evidence` count | a summary of one conversation |
-| **Complete linkage** | Clustering where every member of a group must be similar to *every* other member (this repo finds the largest such group first) | `_clusters()` in store.py, threshold per embedding model (0.82 for bge-small) | single linkage (similar to *any* member; chains) |
-| **Pruning** | Deleting memories on purpose (data minimization) | dormant statuses/feelings with importance ≤ 3, after consolidation | decay (keeps them) |
+| **Pattern / roll-up** | One lasting memory standing for many related ones: episodic → semantic | "goes to the gym regularly": memories ABOUT one activity on 3+ days, counted in Cypher; `(pattern)-[:SUMMARIZES]->(member)`, `evidence` count ([D22](design-decisions.md#d22)) | a summary of one conversation; clustering by similarity (the first version) |
+| **Pruning** | Deleting memories on purpose (data minimization) | expired (`valid_until` passed), dormant memories with importance ≤ 3, after consolidation | decay (keeps them) |
 | **Reflection** | Generating higher-level insights from many memories (Generative Agents) | Not yet (a "where to go next" idea) | consolidation |
 | **Conflict / contradiction resolution** | Deciding which of two incompatible facts is current | `supersedes`, `invalidate`, cardinality rules | dedup |
 | **Provenance / lineage** | Where a fact came from | `(m)-[:FROM]->(Episode)`, `r.said`, `r.evidence` (an edge's supporting memories, Lesson 20) | history (versions) |

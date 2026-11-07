@@ -650,10 +650,10 @@ stateDiagram-v2
     Recent --> Dormant: a day later<br/>strength below 0.05
     Dormant: Dormant — stored, never recalled
     Current --> Current: said again while valid<br/>→ reinforced, valid_until extended
-    Dormant --> RolledUp: 3+ similar (complete linkage ≥ 0.82)<br/>→ find_pattern() writes a habit
+    Dormant --> RolledUp: ABOUT one activity on 3+ days<br/>→ find_pattern() writes a habit
     RolledUp: Rolled up — consolidated_at set<br/>(pattern)-[:SUMMARIZES]->(this)
-    RolledUp --> [*]: pruned (importance ≤ 3)
-    Dormant --> [*]: pruned after 60 days<br/>if never rolled up
+    RolledUp --> [*]: pruned once expired (importance ≤ 3)
+    Dormant --> [*]: pruned after 60 days<br/>if expired and never rolled up
 ```
 
 ---
@@ -663,15 +663,16 @@ stateDiagram-v2
 ```mermaid
 flowchart TD
     start(["close_episode() or /consolidate"]) --> lapse["1 · lapse: open plans<br/>> 14 days past due → status 'lapsed'"]
-    lapse --> fetch["2 · fetch events / statuses / feelings<br/>from the last 60 days, not yet consolidated"]
-    fetch --> cluster["complete-linkage clusters<br/>(every pair ≥ 0.82), size ≥ 3"]
-    cluster --> writer{"find_pattern()<br/>LLM: a habit?"}
-    writer -- no --> next["skip cluster"]
-    writer -- yes --> apply["apply(pattern)<br/>new memory, or reinforced if known"]
-    apply --> link["SUMMARIZES edges, consolidated_at,<br/>pattern.evidence += n"]
+    lapse --> habits["2 · _habits(): activity ← ABOUT ← events / statuses /<br/>plans / feelings, last 60 days, not yet consolidated,<br/>on 3+ distinct days (future plans not counted)"]
+    habits --> known{"activity already<br/>has a pattern?"}
+    known -- yes --> link
+    known -- no --> writer{"find_pattern()<br/>LLM: a habit?"}
+    writer -- no --> next["skip activity"]
+    writer -- yes --> apply["apply(pattern ABOUT the activity)<br/>+ user -practices-> activity"]
+    apply --> link["SUMMARIZES edges, consolidated_at,<br/>pattern.evidence = members summarized"]
     link --> prune
     next --> prune
-    prune["3 · prune: dormant statuses/feelings, importance ≤ 3,<br/>rolled up or older than 60 days → DETACH DELETE"]
+    prune["3 · prune: expired (valid_until passed), dormant, importance ≤ 3,<br/>rolled up or older than 60 days → DETACH DELETE"]
     prune --> done([log lines])
 ```
 

@@ -127,43 +127,56 @@ A background job runs after every conversation (`close_episode`) and from `/cons
 
 1. **Lapse.** Open plans more than 14 days past due become `lapsed`, so the extractor stops
    seeing them as candidates.
-2. **Roll up.** Similar short-lived memories (events, statuses, feelings from the last 60
-   days) are clustered. Each cluster of 3 or more goes to a small LLM step,
+2. **Roll up.** An activity (an `activity` entity such as "gym") with occurrence memories
+   (events, statuses, plans, feelings from the last 60 days) `ABOUT` it on **3 or more
+   distinct days** is a habit. Its memories go to a small LLM step,
    `extract.find_pattern()`, which writes one lasting memory or declines. The pattern is
-   stored through `apply()`, so a pattern seen again is *reinforced*. Each member gets a
-   `SUMMARIZES` edge and a `consolidated_at` stamp, and the pattern keeps an `evidence` count.
-3. **Prune.** Delete dormant statuses and feelings with importance ≤ 3, but only once they're
-   rolled up or older than the 60-day window. Events stay as history even when dormant.
+   `ABOUT` the activity, the user gets a `practices` link to it, each member gets a
+   `SUMMARIZES` edge and a `consolidated_at` stamp, and the pattern's `evidence` is the
+   number of memories it summarizes. Once an activity has a pattern, later days attach to it
+   as more evidence, without asking the LLM for a new sentence.
+3. **Prune.** Delete dormant memories with importance ≤ 3 that have **expired** (`valid_until`
+   has passed), but only once they're rolled up or older than the 60-day window. Events stay
+   as history even when dormant: they have no `valid_until`.
 
 ```
 ✎ + [status] Riley is at the gym before work (until 2026-11-23 15:00)
-✎ (upkeep) pattern from 3 memories: + [fact] Riley works out at the gym regularly.
-✎ (upkeep) pruned 1 dormant status/feeling memories
+✎ (upkeep) pattern from 3 memories: + [fact] Riley goes to the gym regularly.
+✎ (upkeep) pruned 1 dormant expired memories
 ```
 
 This is the episodic → semantic step from the [glossary](../docs/glossary.md#semantic)
 (*semantic memory*, sense 1: general knowledge, not vector search): many episodes become one
-piece of general knowledge. Consolidation finds the episodes to merge with vector similarity
-(sense 2), so both senses meet here.
+piece of general knowledge.
 
-**Clustering uses complete linkage.** A memory joins a cluster only if it's similar to
-*every* member, not just one. I measured the threshold rather than guessing it:
+**A habit is counted in the graph, not guessed from wording.** `_habits()` is one Cypher
+query: activity ← `ABOUT` ← memory, grouped by activity, keeping groups whose memories fall on
+3+ distinct days. A memory's day is when it happened (`occurred_on`, or a plan's `due_on`
+once that day has come), else the day it was said. So:
 
-```
-                                   gym   gym after work   leg day   rock climbing   pizza
-Riley is at the gym               1.00        0.91          0.89        0.81         0.69
-Riley went to the gym after work  0.91        1.00          0.84        0.82         0.72
-Riley is heading to the gym...    0.89        0.84          1.00        0.78         0.65
-```
+- several mentions on one day ("heading to the gym", then "back from the gym") count once;
+- a plan still in the future isn't a day yet: "gym Mon, Wed, Fri next week" is one message,
+  not a habit;
+- `valid_until` is when a status *ends*, not another day it happened;
+- a memory about two activities ("gym, then yoga") counts for both.
 
-At 0.82, the gym sentences cluster. Rock climbing would chain in through "gym after work"
-(0.82) under single linkage, but complete linkage keeps it out (0.78 to "leg day"). The pattern
-writer can still decline a cluster that isn't a habit (airport, dentist, post office).
+No similarity threshold is involved. Whether three sentences are "about the gym" was decided
+once, at extraction, when each was linked to the `gym` entity (Lesson 9, rule 10).
 
-**How the groups are found matters too.** The first version went through memories in time order
-and put each into the first group it fit. An early pair could then lock the rest out (see the
-results below). `_clusters()` now finds the *largest* all-similar group first, removes it and
-repeats. For a few hundred short-lived memories that's still instant.
+**What this replaced, and why.** The first version found habits by *clustering* sentence
+embeddings: complete linkage at a measured cut (0.82 for bge-small), so a cluster couldn't
+chain gym → climbing → hiking. It worked for the sentences it was measured on. Then the
+extraction model changed (`gemma-4-31B-it` → `gemini-3.8-flash`) and the same scenario failed:
+the new model wrote longer sentences with dates in them ("…went to the gym before work on
+2026-11-23 to keep up a workout streak"). No pair of gym memories reached 0.82 any more, and a
+dated rock-climbing memory scored *closer* to a dated gym memory (0.825) than the gym memories
+did to each other: the shared date format made unrelated sentences look alike. One visit was
+also filed as a `plan`, a kind the clustering never looked at.
+
+Lowering the cut would have passed the test and broken again on the next model. The fix
+moved the decision out of the wording: dates live in their fields (Lesson 9, rule 2), the
+activity is an entity, and a habit is a count. The full analysis is in
+[design decisions](../docs/design-decisions.md#d22).
 
 ## What the tests and evals found
 
@@ -205,7 +218,7 @@ repeats. For a few hundred short-lived memories that's still instant.
 | Three mechanisms for three questions about time | true? worth mentioning? stored this way? | three things to tune | one TTL that deletes; recency-only ranking | [D14](../docs/design-decisions.md#d14) |
 | Filter expiry at read time instead of a database TTL | history, follow-ups and consolidation still need expired items | every read filters | APOC TTL (right when deletion is the goal) | [D14](../docs/design-decisions.md#d14) |
 | An injectable clock | time-travel is a parameter, tests are deterministic | every function takes `today`/`now` | wall-clock time everywhere | [D20](../docs/design-decisions.md#d20) |
-| Complete-linkage clustering for habits | a cluster can't chain gym → climbing → hiking | threshold per embedding model (Lesson 19) | single linkage; LLM-only grouping; reflection | [D14](../docs/design-decisions.md#d14) |
+| A habit is memories ABOUT one activity on 3+ days, counted in Cypher | doesn't depend on how the extractor words or dates sentences | the extractor must link each memory to the activity | clustering sentence embeddings (the first version); LLM-only grouping; reflection | [D22](../docs/design-decisions.md#d22) |
 
 ## Test it — [`tests/test_13_time.py`](../tests/test_13_time.py)
 
@@ -225,8 +238,9 @@ uv run python -m companion.scenarios situational
   - a one-day boundary expires;
   - an old minor feeling goes dormant, unless it was confirmed again;
   - an old fact is marked stale;
-  - the roll-up, using a **fake pattern writer**;
-  - pruning only dormant trivia;
+  - the roll-up, using a **fake pattern writer**: 3 days make a habit, one day of gym talk
+    doesn't, future plans aren't days yet, a known habit gathers evidence without a rewrite;
+  - pruning only expired, dormant trivia;
   - plans lapse;
   - a trip doesn't end the real home.
 - **LLM evals:**
@@ -245,7 +259,7 @@ uv run python -m companion.scenarios situational
   5. "Gym again before work" → a lasting habit with evidence ≥ 3.
 
 `consolidate()` takes the pattern writer as an argument (`writer=find_pattern` in
-production, a lambda in tests). **Passing the LLM in** is what lets the clustering, linking
+production, a lambda in tests). **Passing the LLM in** is what lets the counting, linking
 and pruning be tested exactly and for free, while the LLM part gets its own eval.
 
 ### Results
@@ -259,7 +273,8 @@ Full run: [outputs/13-scenarios.txt](outputs/13-scenarios.txt).
 | Extraction evals (Lesson 11), `EVAL_TRIALS=3` | 10/10 |
 | Scenarios, all 13 | 49/49 (after two fixes, below) |
 
-The habit check failed twice, for two different reasons.
+The habit check failed twice, for two different reasons. (This was the clustering version;
+[above](#4-consolidation--memorystoreconsolidate) is why it was later replaced.)
 
 **1. The input didn't contain three visits.** The third gym message was "just got back from
 the gym, my legs are dead". The extractor (reasonably) stored it as a *feeling*: "Riley's legs
@@ -277,9 +292,8 @@ at the gym before    vs just got back  0.81  -> can't join A, joins B
 ```
 
 That makes two pairs and no group of three. Yet heading / after work / before work are 0.85,
-0.90 and 0.85 to each other. Finding the largest group first fixed it, and
-`test_clustering_finds_the_group_an_early_pair_would_hide` keeps these exact sentences as a
-regression test. The full run then gave 49/49, and the gym habit was the only pattern formed in
+0.90 and 0.85 to each other. Finding the largest group first fixed it, and a regression test kept these exact sentences
+(until the graph count replaced clustering altogether). The full run then gave 49/49, and the gym habit was the only pattern formed in
 any scenario:
 
 ```
@@ -299,7 +313,8 @@ little each time, which is how it found a case the fixed fake data in the unit t
 - Filter at read time and keep history; delete only on purpose (privacy, trivia), and only
   after consolidation has had its chance.
 - Facts don't fade, they go stale: check them instead of dropping them.
-- Measure thresholds on real examples, and pick a clustering rule that can't chain.
+- Measure thresholds on real examples. Better still, decide identity ("is this the gym?")
+  once, as a link in the graph, and count links instead of comparing sentences.
 
 > **Later, in [Lesson 20](20-growing-the-life-graph.md):** consolidation gets a fourth step that drops entities with no memory and no link left, and edges end when every memory that supported them is retired.
 
