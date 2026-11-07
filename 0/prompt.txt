@@ -1,0 +1,1 @@
+yes. and any other gaps we should consider to have a complete "life graph" memory for writes and also recall and all the paths needed?
