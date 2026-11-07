@@ -1,0 +1,1 @@
+<bash-input>git branch -d mlflow-tracing</bash-input><bash-stdout>Deleted branch mlflow-tracing (was 63de148).</bash-stdout><bash-stderr></bash-stderr>
