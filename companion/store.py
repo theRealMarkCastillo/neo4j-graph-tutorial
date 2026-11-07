@@ -133,6 +133,40 @@ SENSITIVE_FLOOR = PROFILE.sensitive_floor
 # An entity this close to the message (index score) is looked up by the graph hop.
 ENTITY_HOP_SCORE = PROFILE.entity_hop
 
+# Keyword search (D11). Embeddings blur rare exact words (a medication name, a product code),
+# so a full-text (BM25) search runs beside the vector search. Its hits join the candidates,
+# and the two rankings are fused with reciprocal-rank fusion: each list votes 1 / (RRF_K +
+# position). Only ranks are combined, never BM25 and cosine scores, which aren't comparable.
+# 60 is the constant from the RRF paper (Cormack et al., 2009) and the usual default.
+KEYWORD_LIMIT = 20
+RRF_K = 60
+
+
+def keyword_query(text: str, user: str) -> str | None:
+    """A Lucene query for the message's words, limited to this user's memories. Lowercasing
+    every word means AND / OR / NOT can't act as operators, and \\w+ drops the characters
+    Lucene treats as syntax. None when the message has no words ("?!").
+
+    The user filter is a phrase over analyzed tokens, so it's a pre-filter, not an exact
+    match: "user:mark" also matches "user:mark-2" (the hyphen splits the token). The query
+    re-checks m.user = $user exactly; the cost is that such a neighbour can use up some of
+    the KEYWORD_LIMIT hits."""
+    words = " ".join(w.lower() for w in re.findall(r"\w+", text))
+    if not words:
+        return None
+    return f'text:({words}) AND user:"{user.replace(chr(92), "").replace(chr(34), "")}"'
+
+
+def rrf(*rankings: list[str], k: int = RRF_K) -> dict[str, float]:
+    """Reciprocal-rank fusion: an id's score is the sum of 1 / (k + position) over the lists
+    it appears in (positions start at 1). Being near the top of both lists beats being first
+    in only one of them."""
+    fused: dict[str, float] = {}
+    for ranking in rankings:
+        for pos, item in enumerate(ranking, start=1):
+            fused[item] = fused.get(item, 0.0) + 1 / (k + pos)
+    return fused
+
 # A memory about someone a boundary protects ("don't bring up Dana") is never recalled.
 # The user node is excluded: a topic boundary ("don't ask about my job") is ABOUT the user,
 # and must not hide everything else about them (found by tests/test_10_recall.py).
@@ -893,24 +927,37 @@ class MemoryStore:
         )
         for m in core:
             m["stale"] = decay.is_stale(m["kind"], m.pop("age"))
-        # Semantic: vector similarity re-ranked by importance and recency (feelings fade fast).
+        # Semantic: vector similarity re-ranked by importance and recency (feelings fade fast),
+        # plus keyword (full-text) hits fused in by rank (D11). A keyword hit the vector search
+        # missed gets its cosine computed directly, so every candidate has a comparable score.
         semantic = q(
             """
-            CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node AS m, score
+            CALL () {
+              CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node AS m, score
+              RETURN m, score, null AS bm25
+              UNION ALL
+              WITH 1 AS one WHERE $lucene IS NOT NULL  // no words in the message: no keyword search
+              CALL db.index.fulltext.queryNodes('memory_text', $lucene, {limit: $klimit}) YIELD node AS m, score AS bm25
+              WITH m, bm25 WHERE m[$vprop] IS NOT NULL  // not yet embedded for this model (Lesson 19)
+              RETURN m, vector.similarity.cosine(m[$vprop], $vec) AS score, bm25
+            }
+            WITH m, max(score) AS score, max(bm25) AS bm25  // found by both: one row
             WHERE m.user = $user AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND coalesce(m.status, '') <> 'done'
               AND (m.kind = 'boundary' OR """ + NOT_PROTECTED + """) AND """ + visible("m") + """
-            WITH collect({m: m, score: score}) AS hits
+            WITH collect({m: m, score: score, bm25: bm25}) AS hits
             WITH hits, reduce(top = 0.0, h IN hits | CASE WHEN h.score > top THEN h.score ELSE top END) AS top
             UNWIND hits AS h
-            WITH h.m AS m, h.score AS score, top
+            WITH h.m AS m, h.score AS score, h.bm25 AS bm25, top
             WHERE NOT coalesce(m.sensitive, false)  // sensitive: only as (near) the best match
                OR (score >= top - $margin AND score >= $floor)
             // Age since it was stored or last *confirmed* by the user, on the conversation's clock.
             RETURN m.id AS id, m.kind AS kind, m.text AS text, m.occurred_on AS occurred_on,
                    m.importance AS importance, coalesce(m.sensitive, false) AS sensitive,
-                   round(score, 3) AS score, duration.inSeconds(coalesce(m.last_confirmed, m.created_at), $now).seconds / 86400.0 AS age
+                   round(score, 3) AS score, round(bm25, 3) AS bm25,
+                   duration.inSeconds(coalesce(m.last_confirmed, m.created_at), $now).seconds / 86400.0 AS age
             """,
             vec=vec, margin=SENSITIVE_MARGIN, floor=SENSITIVE_FLOOR,
+            lucene=keyword_query(query, self.user), klimit=KEYWORD_LIMIT,
         )
         # Decay (Lesson 13) in Python, where the curve is unit-tested: drop dormant memories,
         # then order by match + strength.
@@ -932,10 +979,18 @@ class MemoryStore:
         for m, r in zip(semantic, scores):
             m["relevance"] = round(r, 3 if PROFILE.weak_below is not None else 2)
             m["weak"] = r < cut and m["kind"] != "status"
-        semantic = sorted(
-            ({**m, "rank": round(decay.rank(m["score"], m["importance"], m["kind"], m["age"]), 3),
-              "stale": decay.is_stale(m["kind"], m["age"])} for m in semantic),
-            key=lambda m: (m["weak"], -m["rank"]))[:k]
+        semantic = [{**m, "rank": round(decay.rank(m["score"], m["importance"], m["kind"], m["age"]), 3),
+                     "stale": decay.is_stale(m["kind"], m["age"])} for m in semantic]
+        # Fuse two rankings (D11): match x importance x decay, and BM25 over the words. The
+        # keyword vote only reorders; weak matches still go last, so a hit on a common word
+        # ("my", "today") can't lift a memory that isn't about this message.
+        by_rank = [m["id"] for m in sorted(semantic, key=lambda m: -m["rank"])]
+        by_words = [m["id"] for m in sorted((m for m in semantic if m["bm25"] is not None), key=lambda m: -m["bm25"])]
+        fused = rrf(by_rank, by_words)
+        for m in semantic:
+            m["keyword_rank"] = by_words.index(m["id"]) + 1 if m["id"] in by_words else None
+            m["fused"] = round(fused[m["id"]], 4)
+        semantic = sorted(semantic, key=lambda m: (m["weak"], -m["fused"]))[:k]
         # History ("where did I live before?"): embeddings can't express "before", so walk the
         # graph instead — older versions of the best-matching current memories.
         strong = [m for m in semantic if not m["weak"]]  # no history for a match that isn't about this

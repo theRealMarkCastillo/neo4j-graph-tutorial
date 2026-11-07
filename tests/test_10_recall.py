@@ -6,7 +6,8 @@ import pytest
 
 from companion.graph import worth_remembering
 from companion.models import EntityOut, Extraction, MemoryOut, RelationOut
-from companion.store import format_context
+from companion.embeddings import PROFILE, embed
+from companion.store import format_context, keyword_query, rrf
 
 T = dt.date(2026, 11, 5)
 
@@ -175,3 +176,66 @@ def test_entity_hop_reaches_two_steps_out(store):
     ), today=T)
     block = format_context(store.recall("how is Logan doing?", today=T, touch=False), T)
     assert "Max is Logan (your son)'s friend" in block and "Biscuit is Max's pet" in block, block
+
+
+# ---------------------------------------------------------------- keyword search (D11)
+
+@pytest.mark.parametrize("text,expected", [
+    ("Is the XK-4471 safe?", 'text:(is the xk 4471 safe) AND user:"user:pytest"'),
+    ("cats AND dogs OR NOT birds", 'text:(cats and dogs or not birds) AND user:"user:pytest"'),  # no operators
+    ('quote " and (paren) *star*', 'text:(quote and paren star) AND user:"user:pytest"'),        # no syntax
+    ("?!", None),
+])
+def test_keyword_query_is_plain_words_for_this_user(text, expected):
+    assert keyword_query(text, "user:pytest") == expected
+
+
+def test_rrf_rewards_agreement_between_rankings():
+    fused = rrf(["a", "b", "c"], ["b", "c"])
+    assert fused["b"] > fused["a"]                          # 2nd + 1st beats 1st alone
+    assert fused["a"] == pytest.approx(1 / 61)
+    assert sorted(fused, key=fused.get, reverse=True) == ["b", "c", "a"]
+
+
+def test_a_rare_word_is_found_when_the_vector_search_misses_it(store):
+    """The vector index on 5.26 filters by user *after* its top 50 (D4). Fill that top 50
+    with another user's memories that sit right on the message, and only the full-text
+    index, which filters by user inside Lucene, still finds this user's memory."""
+    store.apply(Extraction(memories=[m("Pytest bought a Zentrix XK4471 router at a garage sale")]), today=T)
+    question = "my XK4471 keeps dropping the wifi"
+    other = "user:crowd"  # not "user:pytest-crowd": see keyword_query
+    crowd = [f"My XK4471 keeps dropping the wifi, day {i}" for i in range(80)]
+    store._q(
+        """
+        UNWIND range(0, size($texts) - 1) AS i
+        CREATE (n:Memory {id: 'crowd_' + i, user: $other, kind: 'fact', importance: 5,
+                          text: $texts[i], created_at: datetime()})
+        WITH n, i CALL db.create.setNodeVectorProperty(n, $vprop, $vecs[i])
+        """,
+        other=other, texts=crowd, vecs=embed(crowd),
+    )
+    try:
+        # Precondition: the vector search alone really misses it.
+        nearest = store._q("CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node RETURN node.text AS text",
+                           vec=embed([question], query=True)[0])
+        assert all("Zentrix" not in n["text"] for n in nearest)
+        r = store.recall(question, today=T, touch=False)
+        hit = next((x for x in r["semantic"] if "XK4471" in x["text"]), None)
+        assert hit is not None, [x["text"] for x in r["semantic"]]
+        assert hit["keyword_rank"] == 1 and hit["bm25"] > 0
+        assert all(not x["id"].startswith("crowd_") for x in r["semantic"])
+    finally:
+        store._q("MATCH (n:Memory {user: $other}) DETACH DELETE n", other=other)
+
+
+def test_keyword_agreement_moves_a_match_up(life):
+    """Both rankings are shown in the trace: the fused order is what the prompt gets."""
+    r = life.recall("is Rex still scared of thunderstorms?", today=T, touch=False)
+    top = r["semantic"][0]
+    assert top["text"] == "Pytest's dog Rex is afraid of thunderstorms"
+    assert top["keyword_rank"] == 1 and top["fused"] == max(x["fused"] for x in r["semantic"])
+
+
+def test_a_message_without_words_still_recalls(life):
+    r = life.recall("?!", today=T, touch=False)
+    assert all(x["keyword_rank"] is None for x in r["semantic"])

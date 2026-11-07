@@ -201,8 +201,8 @@ See [Lesson 12](../lessons/12-ontology.md).
 | **Calibration** | Picking a threshold from labelled yes/no pairs | `python -m companion.calibrate` (Lesson 19) | probability calibration in classifiers |
 | **Cosine similarity** | Angle-based vector similarity | Neo4j's vector score is cosine *rescaled* to 0–1: (1 + cos) / 2 | distance |
 | **ANN / HNSW** | Approximate nearest-neighbour search / the graph-based index Neo4j's vector index uses | `db.index.vector.queryNodes` | exact k-NN |
-| **Lexical / keyword search, BM25** | Matching words, scored by term frequency | Not used (Neo4j full-text indexes provide it) | semantic search |
-| **Hybrid search** | (a) vector + keyword, or (b) vector + graph | We do (b): vector entry points + graph hops | — |
+| **Lexical / keyword search, BM25** | Matching words, scored by term frequency | `memory_text`, a Neo4j full-text index, fused into the semantic retriever ([D11](design-decisions.md#d11)) | semantic search |
+| **Hybrid search** | (a) vector + keyword, or (b) vector + graph | Both: (b) vector entry points + graph hops, and (a) inside the semantic retriever | — |
 | **Reranking** | Re-scoring retrieved items with another signal | similarity × importance × recency | retrieval |
 | **RAG** | Retrieval-augmented generation: fetch, then put it in the prompt | `recall()` → memory block | fine-tuning |
 | **GraphRAG** | RAG that uses a graph. Microsoft's GraphRAG builds community summaries over a whole corpus; "local" GraphRAG traverses from entry points | [Lesson 5](../lessons/05-vectors-and-graphrag.md) and the companion use the local style | — |
@@ -331,7 +331,7 @@ most design arguments. The last column says where this repo stands.
 | **Ontology** | OWL/RDFS classes, properties and axioms with formal semantics | A typed vocabulary with rules shared by a team | Palantir's *Ontology*: an operational layer of business objects, links **and actions** that apps and agents act through; or any data model | A lightweight ontology (sense 2 under [ontology](#ontology)), no actions |
 | **Semantic layer** | — (BI and data-warehouse term) | Governed definitions of metrics and dimensions over a warehouse (dbt, Snowflake semantic models, LookML) | "The semantic layer for AI": any metadata an agent can read | Not used. The ontology plays the "agreed meaning" role for relation types See [semantic layer vs ontology layer](#semantic-layer-vs-ontology-layer). |
 | **GraphRAG** | Microsoft Research's method (2024): an entity graph plus community summaries for global questions; later DRIFT and LazyGraphRAG | Any RAG that retrieves through a graph, usually vector entry points + traversal | "RAG, but with a graph, so no hallucinations" | The local style (Lessons 5, 10) |
-| **Hybrid search** | Lexical (BM25) + dense retrieval, fused (e.g. reciprocal-rank fusion) | Same, or vector + graph | "Best of both worlds" | Vector + graph; no lexical retriever yet ([D11](design-decisions.md#d11)) |
+| **Hybrid search** | Lexical (BM25) + dense retrieval, fused (e.g. reciprocal-rank fusion) | Same, or vector + graph | "Best of both worlds" | Vector + graph, and BM25 + vector fused with RRF ([D11](design-decisions.md#d11)) |
 | **Vector database** | — | A database built around ANN indexes (Pinecone, Qdrant, Milvus...) | Anything with a vector index, including general databases | A vector index inside Neo4j ([D1](design-decisions.md#d1)) |
 | **Agentic RAG** | — | The model decides when and what to retrieve, in a loop, through tools | Any RAG with an LLM involved | Lesson 7 is agentic; the companion's recall is not ([D10](design-decisions.md#d10)) |
 | **Reranking** | Re-scoring a candidate list with a stronger model (cross-encoder, learning to rank) | Same, often a hosted reranker API | — | A formula plus an optional cross-encoder label ([rerank and relevance](#rerank-and-relevance)) |
@@ -479,13 +479,13 @@ make sense on one scale *and* one model: see Lesson 19's calibration table, whic
 ### index
 
 (1) a **database index** for lookups (`memory_user_kind`); (2) a **vector index** (HNSW) for
-nearest-neighbour search (`memory_vec`); (3) a **full-text index** (Lucene, BM25), available
-but not used; (4) "indexing" in RAG: the offline step that chunks and embeds documents.
+nearest-neighbour search (`memory_vec`); (3) a **full-text index** (Lucene, BM25) for
+keyword search (`memory_text`); (4) "indexing" in RAG: the offline step that chunks and embeds documents.
 
 ### hybrid
 
-(1) **vector + keyword** search (the common meaning in RAG products); (2) **vector + graph**
-retrieval: what this repo means by hybrid recall; (3) **LLM + rules**, such as the boundary
+(1) **vector + keyword** search (the common meaning in RAG products; used inside the
+semantic retriever); (2) **vector + graph** retrieval: what this repo usually means by hybrid recall; (3) **LLM + rules**, such as the boundary
 tripwire or the ontology checks on extracted relations.
 
 ### rerank and relevance

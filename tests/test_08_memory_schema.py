@@ -9,7 +9,7 @@ def test_schema_is_idempotent_and_complete(driver):
     constraints = {r["name"] for r in rows(driver, "SHOW CONSTRAINTS YIELD name RETURN name")}
     assert {"entity_id", "memory_id", "episode_id"} <= constraints
     indexes = {r["name"]: r["state"] for r in rows(driver, "SHOW INDEXES YIELD name, state RETURN name, state")}
-    for name in ["memory_vec", "entity_vec", "episode_vec", "memory_user_kind"]:
+    for name in ["memory_vec", "entity_vec", "episode_vec", "memory_user_kind", "memory_text"]:
         assert indexes.get(name) == "ONLINE", name
 
 

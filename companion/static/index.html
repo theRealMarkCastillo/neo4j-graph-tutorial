@@ -208,8 +208,8 @@ function refresh() {
 const SOURCES = [
   ["core", "Core profile", "always included: every boundary, plus the most important facts and preferences",
     m => `[${m.kind}] ${m.text}${m.stale ? " · may be out of date" : ""}`],
-  ["semantic", "Vector matches", "nearest memories, re-ranked by match × importance × decay; the ones that aren't about this message are labelled (by a cross-encoder, or by the match score when the embedding model separates well: Lesson 19)",
-    m => `${m.weak ? '<span class="chip">loosely related</span> ' : ""}[${m.kind}] ${m.text} <span class="score">match ${m.score}${RELEVANCE_BY === "vector score" ? "" : ", relevance " + m.relevance}${m.weak ? " &lt; " + RELEVANCE_HINT : ""} → rank ${m.rank}</span>`],
+  ["semantic", "Vector matches", "nearest memories plus keyword (BM25) hits, ordered by fusing two rankings (match × importance × decay, and the words); the ones that aren't about this message are labelled (by a cross-encoder, or by the match score when the embedding model separates well: Lesson 19)",
+    m => `${m.weak ? '<span class="chip">loosely related</span> ' : ""}[${m.kind}] ${m.text} <span class="score">match ${m.score}${RELEVANCE_BY === "vector score" ? "" : ", relevance " + m.relevance}${m.weak ? " &lt; " + RELEVANCE_HINT : ""} → rank ${m.rank}${m.keyword_rank ? ", words #" + m.keyword_rank : ""}</span>`],
   ["entities", "Graph hop", "people and things named (or meant) in the message, and their memories",
     e => `<b>${esc(e.name)}</b> <span class="dim">${esc(e.relation || e.kind)}</span>` +
          (e.memories.length ? "<br>" + e.memories.map(m => "· " + esc(m.text)).join("<br>") : ""), true],

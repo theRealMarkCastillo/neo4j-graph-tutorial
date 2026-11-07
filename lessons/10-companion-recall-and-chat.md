@@ -10,7 +10,7 @@ Every user message triggers one recall that combines five sources:
 | Source | How | Why |
 |---|---|---|
 | **Core profile** | all boundaries + top 8 facts/preferences (importance ≥ 6) | always know who they are and what to avoid |
-| **Semantic** (vector) | `memory_vec` top 50 → re-ranked, top 8 | what's relevant to *this* message |
+| **Semantic** (vector + keyword) | `memory_vec` top 50 + `memory_text` top 20 → re-ranked, fused, top 8 | what's relevant to *this* message |
 | **Entity hop** | names/aliases in the message + `entity_vec`, then `(m)-[:ABOUT]->(e)` | "how's my sister?" pulls everything about Maya |
 | **Follow-ups** | open plans due within ±14 days | proactive "how did it go?" |
 | **Recent episodes** | last 3 summaries + mood | continuity between sessions |
@@ -215,7 +215,7 @@ The first run (before these fixes) showed five problems. Each one is now handled
 | We chose | Because | It costs | Instead, you could | |
 |---|---|---|---|---|
 | Recall every turn, in code, from several retrievers | the companion notices plans and boundaries nobody asked about | every turn pays for recall, even "hi" | a `search_memory` tool the model calls when it wants | [D10](../docs/design-decisions.md#d10) |
-| Vector + graph hop (hybrid sense 2) | "how's my sister?" reaches everything about Maya | no keyword retrieval | add BM25 and rank fusion | [D11](../docs/design-decisions.md#d11) |
+| Vector + graph hop (hybrid sense 2), plus BM25 fused by rank | "how's my sister?" reaches everything about Maya; "XK4471" is found by its exact word | one more index and query | vector only | [D11](../docs/design-decisions.md#d11) |
 | A transparent ranking formula | explainable and unit-testable | hand-picked weights | cross-encoder or learned ranking | [D12](../docs/design-decisions.md#d12) |
 | Labelled plain-text sections in the prompt | section names tell the model *why* each item is there | wording changes behaviour; re-run scenarios | JSON blocks; an LLM-written summary | [D13](../docs/design-decisions.md#d13) |
 | A fixed LangGraph workflow | predictable, testable memory behaviour | no adaptive retrieval mid-turn | a ReAct agent with memory tools | [D19](../docs/design-decisions.md#d19) |
@@ -225,6 +225,11 @@ The first run (before these fixes) showed five problems. Each one is now handled
 - **Table-driven tests** for the small-talk gate: each bug becomes a new row.
 - **Recall** against hand-written memories: semantic hits, boundaries always in core,
   sensitive memories kept out of core, plans in follow-ups.
+- **Keyword search**: the Lucene query is plain words (no operators), RRF rewards agreement,
+  and a rare word ("XK4471") is still found when another user's memories fill the vector
+  index's top 50. That test first checks its own premise: the vector search alone misses it.
+  Writing it found that the full-text user filter is a token match, not an exact one
+  (`user:pytest` also matched `user:pytest-crowd`), so the query re-checks `m.user`.
 
 Writing these found the worst bug in the repo. `NOT_PROTECTED` hides memories that share an
 `ABOUT` entity with a boundary. But the user node is an `:Entity` too. A topic boundary

@@ -182,7 +182,7 @@ session because no API key was set.)
 |---|---|---|---|---|
 | Vector index inside Neo4j | one query goes from a vector hit to connected facts | fewer vector features than a specialist vector DB | Qdrant, Pinecone, pgvector next to the graph | [D1](../docs/design-decisions.md#d1) |
 | A small local embedding model | no key, no cost, offline | weaker separation of related and unrelated text (measured in Lesson 19) | a remote model such as Qwen3-Embedding-8B | [D5](../docs/design-decisions.md#d5) |
-| Vector + graph, no keyword search | embeddings find where to start, the graph reasons from there | rare exact words can be missed | add a full-text (BM25) index and fuse the ranks | [D11](../docs/design-decisions.md#d11) |
+| Vector + graph (and, from Lesson 10, keyword search fused in) | embeddings find where to start, the graph reasons from there | one more index to keep | vector only (rare exact words get missed) | [D11](../docs/design-decisions.md#d11) |
 
 ## Test it — [`tests/test_05_vectors_and_graphrag.py`](../tests/test_05_vectors_and_graphrag.py)
 

@@ -15,6 +15,8 @@
     (:Memory)-[:FROM]->(:Episode)                               provenance
     (:Episode {id, user, started_at, ended_at, summary, mood, embedding})
     (:Episode)-[:NEXT]->(:Episode), (:Episode)-[:HAS_TURN]->(:Turn {idx, role, text, at})
+
+Indexes: vector (memory_vec, entity_vec, episode_vec) and full-text (memory_text, keywords).
 """
 from companion.embeddings import PROFILE
 
@@ -25,6 +27,10 @@ STATEMENTS = [
     "CREATE INDEX memory_user_kind IF NOT EXISTS FOR (m:Memory) ON (m.user, m.kind)",
     "CREATE INDEX entity_user IF NOT EXISTS FOR (e:Entity) ON (e.user)",
     "CREATE INDEX episode_user IF NOT EXISTS FOR (e:Episode) ON (e.user, e.started_at)",
+    # Keyword search (D11): a Lucene index over the memory's words, BM25-scored. `user` is in it
+    # too, so the query can filter by user inside the index, which the vector index on 5.26
+    # can't. One index for every embedding model: words don't change when the model does.
+    "CREATE FULLTEXT INDEX memory_text IF NOT EXISTS FOR (m:Memory) ON EACH [m.text, m.user]",
 ]
 
 

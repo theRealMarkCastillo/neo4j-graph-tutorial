@@ -54,7 +54,7 @@ Recall isn't one search. It's nine retrievers, each answering a different questi
 | Retriever | Finds | Why it exists |
 |---|---|---|
 | Core profile | every boundary, top facts and preferences | must always be known, whatever the message |
-| Vector matches | nearest memories, re-ranked | what the message is *about* |
+| Vector matches | nearest memories and keyword (BM25) hits, re-ranked and fused | what the message is *about* |
 | Graph hop | entities named or meant, and their memories | "Maya" → everything about Maya, even with no word overlap |
 | Open plans | due within ±14 days | so it follows up without being asked |
 | Yearly dates | birthdays in the next two weeks | same |

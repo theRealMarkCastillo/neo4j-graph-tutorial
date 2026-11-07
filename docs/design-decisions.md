@@ -70,8 +70,7 @@ the needs that vectors alone don't meet.
 **Costs:**
 - A second query language (Cypher) and a less common operational skill set.
 - Neo4j's vector index is good but not a specialist: no BM25 + vector fusion inside the
-  database (the `neo4j-graphrag` Python package's `HybridRetriever` combines a vector and a
-  full-text index in the client).
+  database. Recall runs both indexes in one query and fuses their ranks in Python (D11).
 - On 5.26, filters run *after* the approximate search. That's why recall asks for the top 50
   and filters by `user` afterwards (see D4). Neo4j 2026.01 added filtering *inside* the vector
   index (Cypher 25's `SEARCH` clause, with filter properties declared on the index) as a
@@ -304,20 +303,35 @@ The block uses tokens even for "hi".
 <a id="d11"></a>
 ### D11. Hybrid retrieval: vectors find where to start, the graph reasons from there
 
-**Chose:** *hybrid* in sense (b) of the [glossary](glossary.md#hybrid): vector + graph, not
-vector + keyword. Entities named or *meant* in the message are expanded along `ABOUT` and
-`RELATED` edges.
+**Chose:** *hybrid* in both senses of the [glossary](glossary.md#hybrid). The main one is (b),
+vector + graph: entities named or *meant* in the message are expanded along `ABOUT` and
+`RELATED` edges. Inside the semantic retriever, (a) vector + keyword: a full-text index
+(`memory_text`, Lucene, BM25) runs beside the vector index, its hits join the candidates, and
+the two rankings are fused with reciprocal-rank fusion (RRF, `1 / (60 + position)` per list).
 
 **Why:** Lesson 6's rule of thumb. Embeddings are good at fuzzy entry points and bad at exact,
-counted or multi-hop questions.
+counted or multi-hop questions. They also blur rare exact words (a medication name, a product
+code), which is what keyword search is good at. RRF combines *ranks*, so BM25 and cosine
+scores, which aren't on the same scale, never have to be compared.
 
-**Costs:** no keyword search, so exact rare words (a medication name, a product code) depend on
-the embedding model or the name match.
+Two details matter:
+- **The keyword vote only reorders.** Weak matches (Lesson 18) still go last, so a hit on a
+  common word ("my", "today") can't lift a memory that isn't about the message.
+- **The full-text index filters by user inside Lucene** (`user` is indexed beside `text`),
+  so another user's memories can't fill its top hits the way they can fill the vector index's
+  top 50 on 5.26 (D1, D4). It's a pre-filter over analyzed tokens, not an exact match:
+  `user:mark` also matches `user:mark-2`. The query re-checks `m.user` exactly.
 
-**Alternatives:** add a Neo4j full-text (Lucene, BM25-style) index as another retriever and
-fuse the ranks, for example with reciprocal-rank fusion (Graphiti fuses embedding and BM25
-results this way). Neo4j's `neo4j-graphrag` package ships a `HybridRetriever` (vector +
-full-text). It's a cheap, sensible next step.
+**Costs:** one more index and query per recall (a few milliseconds). A message's common words
+also produce keyword hits; they're harmless because of the rule above, but they show up in the
+trace's keyword column.
+
+**Alternatives:** Neo4j's `neo4j-graphrag` package ships a `HybridRetriever` (vector +
+full-text). It's not used here, for the same reason as the other wrappers: it hides the
+Cypher, and it fuses *scores* after normalizing them, where this repo fuses *ranks* and then
+applies its own relevance labels and decay. Graphiti fuses embedding and BM25 results with
+RRF too. Weighted RRF, or a learned fusion, would be the next step if the keyword vote turns
+out too strong or too weak.
 
 <a id="d12"></a>
 ### D12. Rank with a transparent formula; use a learned model only to label
@@ -523,7 +537,6 @@ Honest limits, and what would fill each one:
 |---|---|---|
 | **Memory poisoning / prompt injection** (OWASP's 2026 Top 10 for agentic applications lists it as ASI06, memory and context poisoning) | Text the user (or a pasted document) says is stored, then returned in future prompts as trusted memory, and it outlives the session | Store provenance and source type; treat memory as data in the prompt; filter instruction-like text at write time; review high-impact memories |
 | **Scale** | One `User` node becomes a supernode; one Neo4j instance; post-filtered vector search | Partition by user (D4); bucket edges by time; dedicated vector index per tenant; read replicas (Enterprise) |
-| **Keyword retrieval** | Rare exact words missed by embeddings | Full-text index + rank fusion (D11) |
 | **Reflection / insights** | No higher-level conclusions ("Alex is happier since moving") | Scheduled LLM reflection writing new `insight` memories with evidence links |
 | **Procedural memory learning** | The companion doesn't learn *how* to talk to this person beyond boundaries | Store style feedback as memories that edit the persona prompt; review before applying |
 | **Multimodal memory** | Photos, voice, documents | Embeddings for images/audio, `Media` nodes linked `ABOUT` entities |
@@ -560,7 +573,7 @@ provenance. The main differences here are:
 - a memory is a sentence node pointing at entities, rather than a fact on an edge;
 - the explicit relation ontology with rules;
 - per-persona visibility;
-- no keyword retrieval (D11).
+- keyword hits fused into the vector retriever rather than kept as a separate list (D11).
 
 Letta's sleep-time agents and our background extractor plus `consolidate()` solve the same
 problem: memory work that shouldn't slow down the reply.
