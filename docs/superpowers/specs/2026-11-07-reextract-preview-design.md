@@ -25,8 +25,7 @@ not establish a reason to apply a backfill.
    fixing initialization, but leaves users to identify duplicates themselves.
    Rejected because distinguishing existing items is part of the requested scope.
 
-The recommendation follows the requested no-write behavior. Implementation is
-pending approval of this design; the user has not separately chosen an approach.
+The user approved this design and implementation on 2026-11-07. Use approach 1.
 
 ## Behavior
 
