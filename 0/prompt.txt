@@ -1,0 +1,17 @@
+let me bring up the docker stack and here is the handoff from claude:
+
+
+
+There are a few ways to hand this off, depending on what the other agent should pick up. Nothing in this session is half-finished: everything is merged and pushed. So in practice, handing off means giving someone the next piece of work, most likely the follow-up plan.
+
+**1. Start a new session from the plan (simplest).** The plan holds everything the next agent needs. In a new Claude Code session in this repo, say:
+
+> Implement docs/superpowers/plans/2026-11-06-structural-matching.md with the superpowers executing-plans skill, test-first, with one final review on Opus. Don’t run `companion.reextract` on `user:mark` or `user:guest`, don’t print `.env` values, and ask before merging or pushing.
+
+The spec, the reasons behind the design (D22 in docs/design-decisions.md), and the test style are all in the repo, so a fresh agent doesn’t need this conversation.
+
+**2. Start it from here.** If you tell me “start a session for the follow-up plan”, I’ll launch a separate session with a full brief: the 5 tasks, what “done” means, and the constraints above. It runs in its own worktree and branch, and you can open, steer or stop it from the sidebar.
+
+**3. Carry this conversation’s context over.** If you want the next agent to know this session’s history (why the clustering failed, the rulings, the LLM run results), the Entire plugin’s `session-handoff` skill can summarize this session for another agent. A session started as a fork of this one also inherits the whole conversation. Because this conversation is long, a fresh session working from the plan usually does better.
+
+**4. A different machine or the cloud.** Since everything is pushed, any agent that clones `theRealMarkCastillo/neo4j-graph-tutorial` can start from option 1. Ask me to run it in the cloud and I’ll start it there instead.
