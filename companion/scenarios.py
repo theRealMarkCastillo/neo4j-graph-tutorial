@@ -80,8 +80,9 @@ SCENARIOS = [
         [
             ("Priya exists as a person", lambda r: bool(r.q("MATCH (e:Entity {user:$user, name:'Priya', kind:'person'}) RETURN e"))),
             ("a memory about Priya says she got engaged", lambda r: bool(about_entity(r, "Priya", "engaged"))),
+            # by the date field, not the word: "Priya is getting married" (due 2027-06-12) passes
             ("the wedding is dated 2027-06-12", lambda r: any(
-                str(m.get("due_on")) == "2027-06-12" or "2027-06-12" in m["text"] for m in about_entity(r, "Priya", "wedding"))),
+                str(m.get("due_on")) == "2027-06-12" or "2027-06-12" in m["text"] for m in about_entity(r, "Priya", ""))),
             ("'haha yeah' skipped the extraction call", lambda r: r.extracted[0] == [True, True, False]),
         ],
     ),

@@ -46,7 +46,7 @@ class Profile:
     query_instruction: str = ""    # put before a query (not before stored text)
     # The extraction model whose sentences these thresholds (and the scenario runs) were
     # measured on: a new extractor words memories differently, so re-measure after a switch.
-    extraction_model: str = "google/gemma-4-31B-it"
+    extraction_model: str = "gemini-3.8-flash"
     # score: below this a vector match is "loosely related" (Lesson 18). None: the model can't
     # tell (bge-small's scores overlap), so a cross-encoder decides instead.
     weak_below: float | None = None
