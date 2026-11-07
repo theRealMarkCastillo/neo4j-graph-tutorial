@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M6T63ZM2V9VAR62ZEE58SVFD",
+  "strategy": "manual-commit",
+  "checkpoints_count": 14,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 550,
+    "cache_creation_tokens": 620772,
+    "cache_read_tokens": 53252848,
+    "output_tokens": 192716,
+    "api_call_count": 249,
+    "subagent_tokens": {
+      "input_tokens": 76,
+      "cache_creation_tokens": 224859,
+      "cache_read_tokens": 3330527,
+      "output_tokens": 25463,
+      "api_call_count": 38
+    }
+  },
+  "redaction": {
+    "replacements": 691,
+    "layers": {
+      "betterleaks": 2,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 13,
+      "credentialed_uri": 0,
+      "entropy": 666,
+      "key_context": 14,
+      "provider_token": 2,
+      "shell_stdin": 0
+    }
+  },
+  "linked_commits": [
+    {
+      "sha": "2eb216d7d0c049c80146f58e17b1cc0d8013e9a7",
+      "repo": "gh/theRealMarkCastillo/neo4j-graph-tutorial"
+    }
+  ]
+}
