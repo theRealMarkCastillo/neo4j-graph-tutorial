@@ -1,0 +1,5 @@
+<context>
+{"currentPage": "AI Gateway"}
+</context>
+
+mostly for local develoopment tho?
