@@ -208,7 +208,19 @@ git add companion/store.py tests/test_13_time.py
 git commit -m "Trip guard: a temporary memory is one with an expiry, not a status"
 ```
 
-### Task 4: Docs, and the full suite
+### Task 4: Scenario checks test structure
+
+**Files:**
+- Modify: `companion/scenarios.py` (`Run`, `run_scenario`, the `personas` and `situational` checks)
+- Test: `tests/test_19_embeddings.py` (or wherever scenario helpers are unit-tested; grep `run_scenario`)
+
+- [ ] **Step 1: Write the failing unit test**: `Run` has `logs: list[str]`, and `run_scenario` appends every `memory_log` line and `close_episode` line to it. Test it with a fake app if one exists (grep `fake_llm` in `tests/conftest.py`). Otherwise assert on the `Run` dataclass field and on a small helper, `stored(run, activity) -> bool`, that finds a `+ [` log line with `(until` for a memory ABOUT that activity. Give the helper the memory ids from the log, then look them up with `include_retired`, or match the activity in the log if the ids are gone.
+- [ ] **Step 2: Run it and see it fail.**
+- [ ] **Step 3: Implement:** add `Run.logs`. Change "the gym was stored as a status that expires" to read from what was stored (logs), not from end state. Add "Chicago" to the race words in "Coach's replies use the race". Change "three gym visits became one lasting habit" to look for a current pattern (`evidence >= 3`) ABOUT the `gym` activity, not text that contains "gym".
+- [ ] **Step 4: Run** `uv run pytest -q`. Expected: all pass.
+- [ ] **Step 5: Commit** `git commit -m "Scenario checks read structure and write logs, not wording"`
+
+### Task 5: Docs, and the full suite
 
 **Files:**
 - Modify: `lessons/09-memory-write-path.md` (the section 3 table row "New memory ≥ 0.975 similar"; the found-bugs list near the tombstone line): add the entity veto and why (merging loses data, a split only copies).

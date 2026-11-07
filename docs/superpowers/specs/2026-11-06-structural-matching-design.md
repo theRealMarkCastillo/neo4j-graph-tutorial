@@ -63,6 +63,15 @@ not None. Lasting names come from memories without one. A status still gets its 
 expiry in `clock.parse_until`. That is now the only place `kind` decides "temporary", and
 it's the right place, since a status is short by definition.
 
+### S4. Scenario checks test structure, not wording
+Three LLM scenario checks failed on correct behaviour, on gemini-3.8-flash: a run said
+"getting married", not "wedding" (fixed on the earlier branch); Coach said "base for
+Chicago", not "race"; and a gym status that was correctly stored, consolidated and then
+pruned was gone by the time the end-of-run check looked. Checks read the graph's structure
+(the `gym` activity, `due_on`, `valid_until`) or what the run recorded when it happened. Run
+keeps the store's write logs (`Run.logs`), so a check can see what was stored before pruning.
+Reply checks accept any word that refers to the right thing ("Chicago" for the race).
+
 ## Out of scope (recorded)
 - **Entity matching** (`resolve_entity`). It is already structural first (the extractor's
   `ref` id, then an exact name or alias). The vector fallback needs both `entity_match` and
@@ -74,5 +83,3 @@ it's the right place, since a status is short by definition.
   identity fix.
 - **"step" in `r.said`.** This needs a step-relation type in the ontology, which is an
   ontology change.
-- **Scenario checks that match text.** Already listed as a deferred minor of the earlier
-  plan.
