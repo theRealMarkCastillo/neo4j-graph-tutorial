@@ -259,6 +259,55 @@ def test_private_occurrences_dont_form_a_pattern(store):
     assert calls == []
 
 
+def test_future_plans_are_not_days_yet(store):
+    """Review finding: "gym Mon, Wed, Fri next week" made three plans with three due dates,
+    and that one message counted as a 3-day habit before any visit happened."""
+    for day in (2, 4, 6):
+        did(store, f"Pytest plans to go to the gym, day {day}", "plan", 0,
+            due_on=(D1 + dt.timedelta(days=day)).isoformat())
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=1), writer=fake_writer(calls), prune=False)
+    assert calls == []
+
+
+def test_a_long_status_counts_on_the_day_it_was_said(store):
+    """valid_until is when a status ENDS, not another day it happened."""
+    did(store, "Pytest went to the gym", "event", 0, occurred_on=D1.isoformat())
+    did(store, "Pytest is training at the gym all week", "status", 0,
+        valid_until=f"{(D1 + dt.timedelta(days=5)).isoformat()}T20:00")
+    did(store, "Pytest is at the gym", "status", 1)
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=2), writer=fake_writer(calls), prune=False)
+    assert calls == []  # two days: D1 and D1 + 1
+
+
+def test_a_known_habit_gathers_new_evidence_without_a_rewrite(store):
+    """Review finding: a second run asked the writer again, and its new wording rarely
+    cleared the text dedupe, so near-copies of the habit piled up. The graph already knows
+    the activity has a pattern: new days attach to it."""
+    for day in range(3):
+        did(store, "Pytest is at the gym", "status", day)
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer([]), prune=False)
+    for day in range(10, 13):
+        did(store, "Pytest is at the gym", "status", day)
+    calls = []
+    other = lambda u, t, d: calls.append(t) or MemoryOut(text="Pytest trains at the gym several times a week",
+                                                          kind="preference", importance=6)
+    store.consolidate(D1 + dt.timedelta(days=13), writer=other, prune=False)
+    assert calls == []
+    assert habit(store) == [{"evidence": 6, "about": ["gym"]}]
+
+
+def test_shared_members_are_counted_once(store):
+    """Review finding: a memory ABOUT gym and yoga summarized by one pattern (the second
+    write deduped into the first) added its members twice: evidence 6 for 3 memories."""
+    for day in range(3):
+        did(store, f"Pytest did the gym and then yoga, session {day}", "event", day, about=("gym", "yoga"))
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer([]), prune=False)
+    [h] = habit(store)
+    assert h["evidence"] == 3 and sorted(h["about"]) == ["gym", "yoga"]
+
+
 def test_writer_can_decline(store):
     for i in range(3):
         did(store, "Pytest is at the gym", "status", 2 * i)

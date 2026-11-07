@@ -1132,6 +1132,10 @@ class MemoryStore:
 
         if writer is not None:
             for h in self._habits(now):
+                if h["pattern"]:  # a known habit: new days are more evidence, not a new sentence
+                    self._write(lambda: self._summarize([h["pattern"]], h["members"], now))
+                    log.append(f"pattern {h['pattern']} gained {len(h['members'])} memories ({h['name']})")
+                    continue
                 pattern = writer(self.user_name, [r["text"] for r in h["members"]], today)
                 if pattern is None:
                     continue
@@ -1159,9 +1163,12 @@ class MemoryStore:
         """2. habits  an activity with memories ABOUT it on PATTERN_MIN+ distinct days in the
         window. Read from the graph, not from how the sentences are worded: the vector
         clustering this replaced broke when a new extraction model wrote longer, dated
-        sentences (structure-over-prose spec). A day is the memory's own date field, else
-        the day it was said; several mentions on one day count once. Occurrences only
-        (event, status, plan, feeling): facts and preferences are what a habit becomes."""
+        sentences (structure-over-prose spec). A day is when it happened (occurred_on, or a
+        plan's due day once it has come), else the day it was said; several mentions on one
+        day count once. A plan still in the future isn't a day yet, and valid_until is when a
+        status ends, not another day ("gym Mon, Wed, Fri next week" is one message, not a
+        habit). Occurrences only (event, status, plan, feeling): facts and preferences are
+        what a habit becomes. `pattern` is the activity's current habit memory, if any."""
         return self._q(
             """
             MATCH (a:Entity {user: $user, kind: 'activity'})<-[:ABOUT]-(m:Memory {user: $user})
@@ -1171,11 +1178,15 @@ class MemoryStore:
               AND NOT coalesce(m.sensitive, false)
               AND NOT coalesce(m.private, false)  // a shared pattern must not be built from private memories
               AND m.created_at > $now - duration({days: $days})
-            WITH a, m, coalesce(m.occurred_on, m.due_on, date(m.valid_until), date(m.created_at)) AS day
+              AND NOT coalesce(m.due_on > date($now), false)  // not yet: no evidence
+            WITH a, m, coalesce(m.occurred_on, m.due_on, date(m.created_at)) AS day
             ORDER BY m.created_at
             WITH a, collect(m {.id, .text}) AS members, count(DISTINCT day) AS days
             WHERE days >= $min
-            RETURN a.id AS activity, a.name AS name, members
+            RETURN a.id AS activity, a.name AS name, members,
+                   COLLECT { MATCH (p:Memory {user: $user})-[:ABOUT]->(a)
+                             WHERE p.evidence IS NOT NULL AND p.invalidated_at IS NULL
+                             RETURN p.id ORDER BY p.created_at }[0] AS pattern
             """, now=now, days=PATTERN_WINDOW_DAYS, min=PATTERN_MIN)
 
     def _store_pattern(self, pattern, habit: dict, today: dt.date, now: dt.datetime) -> list[str]:
@@ -1189,14 +1200,20 @@ class MemoryStore:
         log = [f"pattern from {len(group)} memories: {line}" for line in self.apply(found, today=today)]
         # By id, not by text: if apply() reinforced an existing pattern ("goes to the gym
         # regularly" vs "works out at the gym often"), the texts differ.
+        self._summarize(self.written_ids, group, now)
+        return log
+
+    def _summarize(self, pattern_ids: list[str], members: list[dict], now: dt.datetime) -> None:
+        """Link a pattern to its members. evidence is the number of members it summarizes,
+        counted from the edges, so a member linked twice (a memory about two activities whose
+        patterns turned out to be one) counts once."""
         self._q(
             """
             MATCH (p:Memory {user: $user}) WHERE p.id IN $pattern
             MATCH (m:Memory) WHERE m.id IN $ids
             SET m.consolidated_at = $now MERGE (p)-[:SUMMARIZES]->(m)
-            WITH p, count(m) AS n SET p.evidence = coalesce(p.evidence, 0) + n
-            """, now=now, pattern=self.written_ids, ids=[r["id"] for r in group])
-        return log
+            WITH DISTINCT p SET p.evidence = COUNT { (p)-[:SUMMARIZES]->() }
+            """, now=now, pattern=pattern_ids, ids=[r["id"] for r in members])
 
     def _prune(self, now: dt.datetime) -> list[str]:
         """Delete dormant trivia: one statement, so it's atomic without _write(). Only what
