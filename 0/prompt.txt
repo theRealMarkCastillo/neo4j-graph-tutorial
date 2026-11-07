@@ -1,0 +1,137 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+
+Summary:
+1. Primary Request and Intent:
+   - The user's first question was about the gaps mentioned in the docs and the other Neo4j Python libraries the docs mention: are they used, and why or why not. I answered: only the `neo4j` driver is imported. GDS and APOC are server plugins called through Cypher. `neo4j-graphrag`, `neo4j-agent-memory`, Graphiti, Mem0, LangGraph BaseStore and neosemantics are comparison alternatives that aren't used. The gaps table is in docs/design-decisions.md.
+   - "Yes, add it": add BM25 keyword search fused with vector search by RRF. Done and committed on main as 1adb511.
+   - "Do we need to test more or what next?" and then "Ok continue": I ran the LLM suite and checked the UI. The trace UI was fine, and the commit was made.
+   - "Yes, debug it": debug the failing situational scenario check "three gym visits became one lasting habit".
+   - The user chose "Count plans (Recommended)" when I asked how plans should be handled.
+   - Mid-turn, the user said: "ok so I want to make sure we aren't just playing wack-a-mole fixing bugs in paths that surface. is there some overall design flaw that is generalized and creates these types of bugs we should fix? we don't want to hunt-and-peck at code fixing failing "tests" by coding to each case to fix."
+   - "Plan structural fix", then "Native" for the execution method.
+   - Mid-run, the user said: "do sub-agents if it makes sense for fresh context reviews".
+   - Latest message: "anything else in the codebase that needs similar type of fix?" This needs a text answer listing other places where identity or decisions depend on prose similarity, thresholds or `kind` switches.
+
+2. Key Technical Concepts:
+   - Neo4j 5.26: vector indexes (HNSW, post-filtered top 50), a full-text Lucene index (`memory_text` ON EACH [m.text, m.user]), `db.index.fulltext.queryNodes`, `vector.similarity.cosine` (returns 0–1, the same scale as the index score), CALL subqueries with UNION ALL, and COLLECT/COUNT subqueries.
+   - Reciprocal-rank fusion: `rrf(*rankings, k=60)`. Weak matches still sort last.
+   - The structure-over-prose design: identity lives in graph structure and typed fields, not sentence wording. Activities are `activity` entities. A habit is a Cypher count of memories ABOUT one activity on 3 or more distinct days. Known days live in occurred_on, due_on or valid_until, not in the text. Pruning gates on an expired valid_until. Each embedding `Profile.extraction_model` records the model it was calibrated with, and scenarios run a `threshold_check()`.
+   - Embedding profiles: bge-small (local, the test default via conftest) and Qwen3-Embedding-8B (remote; `.env`).
+   - LLM extraction runs on gemini-3.8-flash (from `.env`). The thresholds were originally measured with google/gemma-4-31B-it.
+   - The superpowers skills in use: systematic-debugging, writing-plans, executing-plans, and test-driven-development. The executing-plans ledger is at `.superpowers/sdd/2026-11-06-structure-over-prose/progress.md`, which is git-ignored.
+
+3. Files and Code Sections:
+   - **companion/schema.py** (commit 1adb511): added `"CREATE FULLTEXT INDEX memory_text IF NOT EXISTS FOR (m:Memory) ON EACH [m.text, m.user]"` and an index note in the docstring.
+   - **companion/store.py**:
+     - 1adb511: added `KEYWORD_LIMIT=20`, `RRF_K=60`, `keyword_query(text, user)` (lowercases words, returns `text:(...) AND user:"<user>"`, or None) and `rrf()`. The semantic recall query gained a CALL{vector top 50 UNION ALL fulltext} branch, `max(score)` and `max(bm25)`, and returns `bm25`. The Python side computes `keyword_rank` and `fused`, and sorts by `(weak, -fused)`.
+     - Task 1: the semantic query returns `m.due_on AS due_on`; the graph-hop projection gained `.occurred_on, .due_on`; added `day_note(m)` (" (on X)" or " (due X)"), which is used in the format_context relevant lines.
+     - Task 3: removed `_clusters`, `PATTERN_SIMILARITY` and the `embed_for_clustering` import; imports `RelationOut`; `PATTERN_MIN = 3` now counts distinct days.
+       ```python
+       def _habits(self, now) -> list[dict]:
+           MATCH (a:Entity {user:$user, kind:'activity'})<-[:ABOUT]-(m:Memory {user:$user})
+           WHERE m.invalidated_at IS NULL AND m.consolidated_at IS NULL
+             AND m.kind IN ['event','status','plan','feeling'] AND coalesce(m.status,'') <> 'lapsed'
+             AND NOT coalesce(m.sensitive,false) AND NOT coalesce(m.private,false)
+             AND m.created_at > $now - duration({days:$days})
+             AND NOT coalesce(m.due_on > date($now), false)
+           WITH a, m, coalesce(m.occurred_on, m.due_on, date(m.created_at)) AS day ORDER BY m.created_at
+           WITH a, collect(m {.id,.text}) AS members, count(DISTINCT day) AS days WHERE days >= $min
+           RETURN a.id AS activity, a.name AS name, members,
+             COLLECT { MATCH (p:Memory {user:$user})-[:ABOUT]->(a) WHERE p.evidence IS NOT NULL AND p.invalidated_at IS NULL RETURN p.id ORDER BY p.created_at }[0] AS pattern
+       ```
+       In `consolidate()`: if `h["pattern"]`, call `self._write(lambda: self._summarize([h["pattern"]], h["members"], now))` and log "pattern X gained N memories (name)". Otherwise call the writer, then `_store_pattern(pattern, h, today, now)`. That function sets the pattern's about to `[*(pattern.about or ["user"]), activity id]` and adds `RelationOut(source="user", target=activity id, type="practices")` through `apply()`, then calls `_summarize(self.written_ids, group, now)`. `_summarize` MERGEs SUMMARIZES, sets consolidated_at, and sets `p.evidence = COUNT {(p)-[:SUMMARIZES]->()}`.
+     - Task 4: `_prune` uses `m.valid_until IS NOT NULL AND m.valid_until <= $now` (it previously used `kind IN status/feeling`), and its log line is `"pruned {n} dormant expired memories"`. `timeline()` no longer has the kind gate. The consolidate docstring was updated.
+   - **companion/extract.py**:
+     - Rule 2 now says a known day goes in its field, NOT in the text ("Riley went to the gym" with occurred_on); vague anchors stay in the text.
+     - The plan example changed to ("Riley is going to Priya's wedding", due_on 2027-06-12).
+     - Rule 10 adds that ACTIVITIES {user} or people in their life do, named or not (gym, running, yoga, therapy, piano lessons), are entities of kind activity, named by the plain noun, and EVERY memory about doing one lists it in `about`. One-off generic things stay text-only.
+     - The "Off to the gym!" example now includes `entities: gym (activity)` and `about [gym]`.
+   - **companion/embeddings.py**: removed `pattern`, `cluster_instruction` and `embed_for_clustering`; added `extraction_model: str = "google/gemma-4-31B-it"`.
+   - **companion/calibrate.py**: removed the pattern check and the cluster branch; prints "Measured with extraction model: …".
+   - **companion/scenarios.py**: added `import config` and `from companion.embeddings import PROFILE`. `threshold_check()` returns `(f"thresholds measured with this extraction model ({measured} vs {used})", used == measured)`, and `run_scenario` appends it to the results.
+   - **companion/static/index.html**:
+     - 1adb511: shows "words #N" in the semantic list.
+     - Task 1: added `dayNote(m)` and used it in the semantic and entities renderers.
+     - Task 6: the Patterns copy now says "memories about one activity on 3+ days".
+   - **Tests**:
+     - tests/test_10_recall.py: keyword tests (`keyword_query` params, rrf, rare word XK4471 with a crowd user `user:crowd` of 80 embedded memories plus a vector-miss precondition, `keyword_agreement`, no-words message) and `test_the_day_comes_from_the_field_not_the_text`.
+     - tests/test_08: `memory_text` index ONLINE.
+     - tests/test_11_extraction_evals.py: `test_a_known_day_goes_in_the_field_not_the_text` (the day may be in any field), `GYM = "e_gym: gym (activity) — Riley's gym workouts"`, `test_a_gym_visit_is_about_the_gym_activity` (3 messages), `test_a_known_activity_is_reused`, `test_a_one_off_dinner_is_not_an_entity`.
+     - tests/test_13_time.py: helpers `did()` and `habit()`; tests three_days, one_day, each_activity, wording_does_not_matter, unlinked, lapsed plan, private, future_plans_are_not_days_yet, long_status_counts_on_the_day_it_was_said, known_habit_gathers_new_evidence_without_a_rewrite, shared_members_are_counted_once, prune_needs_an_expiry, an_expired_event_is_pruned_like_a_status; the prune tests were re-seeded with valid_until.
+     - tests/test_14_production.py: the pattern test was re-seeded with the gym activity.
+     - tests/test_19: removed the cluster-instruction test; added `test_scenarios_check_the_extraction_model`.
+   - **Docs** (Task 6): lessons 09, 13 (rewritten consolidation, plus a history of the clustering failure), 19 (pattern row and instruction removed, extraction_model added), 20 (a note); docs/design-decisions.md (new **D22** "Decide identity in the graph; compare prose only where meaning is fuzzy", D1–D22 index, gap rows "Learned thresholds" updated and "Structural dedupe" added; earlier D1/D11 keyword updates); docs/architecture.md (diagrams); docs/glossary.md (pattern and pruning rows; complete-linkage row removed); README (re-measure after changing LLM_EXTRACTION_MODEL); the spec's D3 was amended after review.
+   - **docs/superpowers/specs/2026-11-06-structure-over-prose-design.md** and **docs/superpowers/plans/2026-11-06-structure-over-prose.md** were created and committed (8bddbc5).
+
+4. Errors and fixes:
+   - A Cypher quote error in a test string ("Someone else's") was fixed by changing the text.
+   - In the rare-word test, the vector search still found the memory when the crowd vectors were identical. Fixed with 80 distinct real embeddings plus a precondition assertion.
+   - The full-text user filter matched `user:pytest-crowd` for "user:pytest" because the analyzer splits on the hyphen. This was documented as a pre-filter only (m.user is re-checked exactly), and the test crowd id was changed to `user:crowd`.
+   - My inspection script initially loaded the Qwen profile (not the test bge profile), which gave a false "no embedding" finding. I corrected it.
+   - I accidentally printed part of EMBED_API_KEY in tool output while grepping .env. I told the user, and it must not be repeated.
+   - The plan's eval asserted occurred_on only; I ruled that any date field counts.
+   - tests/test_14 relied on clustering, so I re-seeded it (ruling recorded).
+   - The intermittent `test_a_trip_does_not_end_the_real_home` (it also fails on the base code) is noted in the ledger.
+   - The reviewer's Important findings (forward-looking dates counted as days; duplicate patterns piling up) were fixed with TDD in commit 1657ffe.
+
+5. Problem Solving:
+   - The situational habit failure was root-caused to coupling with the extraction model and resolved structurally (habits counted via activity entities). It awaits verification by the LLM run.
+   - Calibration on both models matched Lesson 19's documented misses. Ruling: no threshold changes; update extraction_model only if the LLM suite passes apart from threshold_check.
+
+6. All user messages:
+   - "what about some of the gaps mentioned in docs? and other neo4j python libraries mentioned? do we use them? why or why not?"
+   - "Yes, add it"
+   - "Do we need to test more or what next ?"
+   - "Ok continue"
+   - "Yes, debug it"
+   - (Answer to my question) "Count plans (Recommended)"
+   - "ok so I want to make sure we aren't just playing wack-a-mole fixing bugs in paths that surface. is there some overall design flaw that is generalized and creates these types of bugs we should fix? we don't want to hunt-and-peck at code fixing failing "tests" by coding to each case to fix."
+   - "Plan structural fix"
+   - "Native"
+   - "do sub-agents if it makes sense for fresh context reviews"
+   - "anything else in the codebase that needs similar type of fix?"
+   - Constraints (from the user's global CLAUDE.md, verbatim): "Do not include "Co-authored-by" or any AI attribution trailers in git commit messages." "Do not include AI attribution or generator notes in pull request descriptions." "Keep git commit messages concise and focused on the technical changes."
+   - Other standing constraints: never run `companion.reextract` on real users (user:mark, user:guest) without explicit user approval; don't repeat the API key; don't push or merge without asking.
+
+7. Pending Tasks:
+   - Answer the latest question, "anything else in the codebase that needs similar type of fix?"
+   - Finish Task 7:
+     - read the LLM suite results (background task b7yrbxvqp; output in `.superpowers/sdd/2026-11-06-structure-over-prose/llm-run-1.txt`). Expected: the gym habit forms, and every scenario fails only `threshold_check` (gemma vs gemini).
+     - If so, set `extraction_model` on the profiles to "gemini-3.8-flash", rerun `uv run pytest -q -m llm`, and commit "Re-measure thresholds on gemini-3.8-flash".
+     - Ask the user before running reextract (Step 4).
+   - Run the final whole-branch review: a fresh opus subagent with the review package, using `review-package PLAN MERGE_BASE HEAD`, where MERGE_BASE is 1adb511. Then one fix pass for Critical/Important findings.
+   - Final message: list the rulings and the deferred minors, delete the workspace, and follow finishing-a-development-branch.
+   - Rulings so far:
+     - Task 1: an eval accepts any date field.
+     - Task 3: test_14 re-seeded; patterns are also ABOUT the user.
+     - Task 3-fix: day expression amended; known habits attach evidence; evidence counted from edges.
+     - Task 5: extraction_model is a field default.
+     - Task 7: no threshold changes.
+   - Deferred minors:
+     - the find_pattern prompt still says "similar" and isn't given the activity name;
+     - unmerged activity names split the count;
+     - the habit tests don't pin the sensitive/invalidated/kind filters, the window or the ordering;
+     - the scenario gym check matches text CONTAINS 'gym'.
+
+8. Current Work:
+   - I was in Task 7 of the structure-over-prose plan on branch `structure-over-prose`. Commits: 8bddbc5 (plan), a9f3eb1 (T1), fd5a632 (T2), 166de22 (T3), 1657ffe (review fixes), 56102ef (T4), efe7478 (T5), then T6 docs.
+   - The full LLM suite was started in the background. Calibration ran on both models, and a ruling of no threshold changes was recorded in the ledger. My last message: "The ruling is recorded. I'm waiting for the LLM suite to finish before updating `extraction_model`."
+   - The user then asked: "anything else in the codebase that needs similar type of fix?"
+
+9. Optional Next Step:
+   Answer "anything else in the codebase that needs similar type of fix?" in text. Ranked candidates from what I already know:
+   1. **Duplicate detection** (cosine ≥ 0.975/0.966 on text) decides whether a memory is reinforced or added. Structural option: same ABOUT entities, same kind, same day, with similarity as a fallback. This is already in the gaps table.
+   2. **Entity resolution** (entity_match on LLM-written summaries plus name_match): bge already gets 3 of 8 calibration pairs wrong. Prefer the extractor's `ref` ids and relation context (for example, the same relation to the user) over summary similarity.
+   3. **The trip/lives_in guard** keys on `kind == 'status'`. Should key on `valid_until` being present, the same way pruning now does.
+   4. **The forgotten tombstone** matches by cosine. It could also match on the forgotten memory's ABOUT entities and kind.
+   5. **The sensitive recall floor and margin** are vector scores (bge gets 3 of 8 wrong). Could also recall sensitive memories ABOUT the entities named in the message.
+   6. **Kind gates that are fine**, because kind is semantics there: the core profile (fact/preference), followups (plan/open), decay half-lives.
+   7. **English-only regex gates** (`worth_remembering`, role names) are a separate, already-documented gap.
+   8. **Similarity used for fuzzy meaning** is appropriate and should stay: recall, relevance labels, entity_hop. These are guarded by the extraction_model check.
+   Then offer to make these a follow-up plan, and continue Task 7 when the background LLM run notifies: "I'm waiting for the LLM suite to finish before updating `extraction_model`."
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/markcastillo/.claude/projects/-Users-markcastillo-git-neo4j-graph-tutorial/3c14a7a9-4d21-42ae-a101-76ff407acc7c.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
+
+The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them.
