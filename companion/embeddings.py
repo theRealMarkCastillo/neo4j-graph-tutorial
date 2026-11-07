@@ -44,6 +44,9 @@ class Profile:
     sensitive_margin: float   # score: ...and to be within this of the best match
     entity_hop: float         # score: an entity this close to the message is looked up
     query_instruction: str = ""    # put before a query (not before stored text)
+    # The extraction model whose sentences these thresholds (and the scenario runs) were
+    # measured on: a new extractor words memories differently, so re-measure after a switch.
+    extraction_model: str = "google/gemma-4-31B-it"
     # score: below this a vector match is "loosely related" (Lesson 18). None: the model can't
     # tell (bge-small's scores overlap), so a cross-encoder decides instead.
     weak_below: float | None = None

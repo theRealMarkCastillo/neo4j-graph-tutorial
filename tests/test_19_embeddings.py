@@ -130,3 +130,16 @@ def test_a_model_that_separates_well_labels_weak_matches_by_its_own_score(store,
     assert {m["text"]: m["weak"] for m in r["semantic"]} == {
         m["text"]: m["score"] < cut for m in r["semantic"]}
     assert not r["semantic"][0]["weak"] and r["semantic"][-1]["weak"]
+
+
+def test_scenarios_check_the_extraction_model(monkeypatch):
+    """Thresholds are measured on one extraction model's sentences (structure-over-prose
+    spec, D5). Every scenario run checks the configured model is that one, so a model swap
+    fails loudly instead of drifting."""
+    from companion import scenarios
+    from companion.embeddings import PROFILE
+    monkeypatch.setattr(scenarios.config, "LLM_EXTRACTION_MODEL", PROFILE.extraction_model)
+    assert scenarios.threshold_check()[1] is True
+    monkeypatch.setattr(scenarios.config, "LLM_EXTRACTION_MODEL", "some-other-model")
+    desc, ok = scenarios.threshold_check()
+    assert not ok and "some-other-model" in desc

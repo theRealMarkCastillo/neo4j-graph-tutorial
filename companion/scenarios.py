@@ -18,9 +18,11 @@ from typing import Callable
 from langchain_core.messages import HumanMessage
 from neo4j import GraphDatabase
 
+import config
 import observability
 from config import NEO4J_AUTH, NEO4J_URI
 from companion.graph import build_companion, close_episode, greeting, seed_thread
+from companion.embeddings import PROFILE
 from companion.store import MemoryStore, format_context
 
 D = dt.date
@@ -319,6 +321,15 @@ SCENARIOS = [
 ]
 
 
+def threshold_check() -> tuple[str, bool]:
+    """Every scenario run also checks that the thresholds were measured on this extraction
+    model's sentences (structure-over-prose spec). Fix a failure by re-running
+    `python -m companion.calibrate` and the scenarios on the new model, then updating
+    `extraction_model` on the profile."""
+    used, measured = config.LLM_EXTRACTION_MODEL, PROFILE.extraction_model
+    return (f"thresholds measured with this extraction model ({measured} vs {used})", used == measured)
+
+
 def run_scenario(driver, sc: Scenario, verbose: bool = True) -> list[tuple[str, bool]]:
     store = MemoryStore(driver, f"eval {sc.name}")
     store.wipe()
@@ -370,6 +381,7 @@ def run_scenario(driver, sc: Scenario, verbose: bool = True) -> list[tuple[str, 
             print(f"     check error: {type(e).__name__}: {e}")
             ok = False
         results.append((desc, ok))
+    results.append(threshold_check())
     return results
 
 

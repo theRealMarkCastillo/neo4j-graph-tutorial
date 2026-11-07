@@ -108,7 +108,8 @@ def best_cut(yes: list[float], no: list[float]) -> float:
 
 
 def main() -> None:
-    print(f"Model: {PROFILE.model} ({PROFILE.dims} dims)\n")
+    print(f"Model: {PROFILE.model} ({PROFILE.dims} dims)")
+    print(f"Measured with extraction model: {PROFILE.extraction_model}\n")
     suggested = {}
     for name, scale, question, side, pairs in CHECKS:
         yes = [similarity(a, b, side, scale) for ok, a, b in pairs if ok]
