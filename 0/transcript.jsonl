@@ -1,0 +1,2 @@
+{"v":1,"agent":"claude-code","cli_version":"0.12.2","type":"user","ts":"2026-11-07T04:59:19.380Z","content":[{"id":"0e12a9c4-6436-43c6-9712-fba203573875","text":"how do we import entire.io sessions"}]}
+{"v":1,"agent":"claude-code","cli_version":"0.12.2","type":"assistant","ts":"2026-11-07T04:59:19.863Z","id":"94dc6b91-23b9-4f63-8989-07a8ad0dff48","cache_write_5m_tokens":0,"cache_write_1h_tokens":0,"content":[{"text":"Not logged in · Please run /login","type":"text"}]}
