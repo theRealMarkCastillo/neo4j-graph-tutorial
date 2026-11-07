@@ -239,3 +239,13 @@ def test_keyword_agreement_moves_a_match_up(life):
 def test_a_message_without_words_still_recalls(life):
     r = life.recall("?!", today=T, touch=False)
     assert all(x["keyword_rank"] is None for x in r["semantic"])
+
+
+# ---------------------------------------------------------------- dates come from fields (D1)
+
+def test_the_day_comes_from_the_field_not_the_text(store):
+    """Known days live in occurred_on / due_on, not in the sentence (structure-over-prose
+    spec): the prompt block adds them back so the chat model still sees when it happened."""
+    store.apply(Extraction(memories=[m("Pytest went to the gym", "event", occurred_on="2026-11-03", importance=4)]), today=T)
+    block = format_context(store.recall("did I go to the gym?", today=T, touch=False), T)
+    assert "Pytest went to the gym (on 2026-11-03)" in block, block

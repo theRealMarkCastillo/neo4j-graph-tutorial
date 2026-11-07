@@ -204,15 +204,18 @@ function refresh() {
   ({turn: drawTurn, prompt: drawPrompt, graph: drawGraph, strength: drawStrength, diary: drawDiary}[on] || (() => {}))();
 }
 
+// A memory's day comes from its field, not its text (extraction rule 2).
+const dayNote = m => m.occurred_on ? ` (on ${m.occurred_on})` : m.due_on ? ` (due ${m.due_on})` : "";
+
 // ---------------------------------------------------------------- recall, shown by retriever
 const SOURCES = [
   ["core", "Core profile", "always included: every boundary, plus the most important facts and preferences",
     m => `[${m.kind}] ${m.text}${m.stale ? " · may be out of date" : ""}`],
   ["semantic", "Vector matches", "nearest memories plus keyword (BM25) hits, ordered by fusing two rankings (match × importance × decay, and the words); the ones that aren't about this message are labelled (by a cross-encoder, or by the match score when the embedding model separates well: Lesson 19)",
-    m => `${m.weak ? '<span class="chip">loosely related</span> ' : ""}[${m.kind}] ${m.text} <span class="score">match ${m.score}${RELEVANCE_BY === "vector score" ? "" : ", relevance " + m.relevance}${m.weak ? " &lt; " + RELEVANCE_HINT : ""} → rank ${m.rank}${m.keyword_rank ? ", words #" + m.keyword_rank : ""}</span>`],
+    m => `${m.weak ? '<span class="chip">loosely related</span> ' : ""}[${m.kind}] ${m.text}${dayNote(m)} <span class="score">match ${m.score}${RELEVANCE_BY === "vector score" ? "" : ", relevance " + m.relevance}${m.weak ? " &lt; " + RELEVANCE_HINT : ""} → rank ${m.rank}${m.keyword_rank ? ", words #" + m.keyword_rank : ""}</span>`],
   ["entities", "Graph hop", "people and things named (or meant) in the message, and their memories",
     e => `<b>${esc(e.name)}</b> <span class="dim">${esc(e.relation || e.kind)}</span>` +
-         (e.memories.length ? "<br>" + e.memories.map(m => "· " + esc(m.text)).join("<br>") : ""), true],
+         (e.memories.length ? "<br>" + e.memories.map(m => "· " + esc(m.text) + dayNote(m)).join("<br>") : ""), true],
   ["followups", "Open plans", "due within two weeks either side of today", m => `${m.text} <span class="score">due ${m.due_on}</span>`],
   ["upcoming", "Yearly dates", "birthdays and anniversaries in the next two weeks", m => `${m.on}: ${m.text}`],
   ["recent", "Recently ended", "situations that expired in the last day: a friend would ask how it went", m => `${m.text} <span class="score">until ${String(m.until).slice(0, 16)}</span>`],

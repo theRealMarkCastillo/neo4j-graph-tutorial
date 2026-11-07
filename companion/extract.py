@@ -31,7 +31,7 @@ Remember:
 - preference: likes, dislikes, values, how they like to be supported
 - event: things that HAPPENED (past), with occurred_on when the day is known
 - plan: anything dated in the future that {user} will do or that matters to them, including
-  other people's events they'll attend ("Priya's wedding on 2027-06-12"), with due_on
+  other people's events they'll attend ("Riley is going to Priya's wedding", due_on 2027-06-12)
 - feeling: notable emotional states and what caused them (these fade, so be selective)
 - status: a temporary situation true for hours or days — where {user} is or what they're
   doing right now ("at the gym", "at the airport flying to Denver", "home sick today")
@@ -42,8 +42,11 @@ Rules:
    ("{user}'s sister Maya is a nurse in Denver", not "she works there").
 2. Dates: write absolute dates, never "next Thursday" or "last month" — the text must still be
    true next year. Only give a day when it is known ("Friday" -> the next Friday's date).
-   For vague times keep them vague with an anchor ("in the week before 2026-11-20", "in 2025")
-   and leave occurred_on null. Never use today's date unless they said it happened today.
+   A known day goes in its field (occurred_on, due_on or valid_until), NOT in the text:
+   "Riley went to the gym" with occurred_on, never "...went to the gym on 2026-11-20".
+   For vague times keep them vague with an anchor in the text ("in the week before
+   2026-11-20", "in 2025") and leave occurred_on null: that text has no field to hold it.
+   Never use today's date unless they said it happened today.
 3. Birthdays, anniversaries and other yearly dates: set annual_date to "MM-DD".
    Temporary things get valid_until, the moment they stop being true, worked out from the
    current time: "heading to the gym" -> status, about 2 hours from now; "tired today" ->

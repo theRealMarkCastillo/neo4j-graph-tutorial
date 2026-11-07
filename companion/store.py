@@ -951,7 +951,7 @@ class MemoryStore:
             WHERE NOT coalesce(m.sensitive, false)  // sensitive: only as (near) the best match
                OR (score >= top - $margin AND score >= $floor)
             // Age since it was stored or last *confirmed* by the user, on the conversation's clock.
-            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.occurred_on AS occurred_on,
+            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.occurred_on AS occurred_on, m.due_on AS due_on,
                    m.importance AS importance, coalesce(m.sensitive, false) AS sensitive,
                    round(score, 3) AS score, round(bm25, 3) AS bm25,
                    duration.inSeconds(coalesce(m.last_confirmed, m.created_at), $now).seconds / 86400.0 AS age
@@ -1038,7 +1038,7 @@ class MemoryStore:
                 AND """ + NOT_PROTECTED + """ AND """ + visible("m") + """
             WITH e, r, m ORDER BY m.importance DESC
             WITH e, head(collect(r.type)) AS relation,
-                 collect(DISTINCT m {.id, .kind, .text, .importance,
+                 collect(DISTINCT m {.id, .kind, .text, .importance, .occurred_on, .due_on,
                                      age: duration.inSeconds(coalesce(m.last_confirmed, m.created_at), $now).seconds / 86400.0})[..20] AS memories
             // Its links to other entities, both directions and up to two steps (Logan -likes->
             // Minecraft is found from either end; "my son's friend Max" -> Max's dog), each end
@@ -1419,6 +1419,16 @@ def _link_line(l: dict) -> str:
     return f"{dst} is {src}'s {t}"
 
 
+def day_note(m: dict) -> str:
+    """A memory's day, from its field: known days aren't written into the text (extraction
+    rule 2), so the prompt adds them back."""
+    if m.get("occurred_on"):
+        return f" (on {m['occurred_on']})"
+    if m.get("due_on"):
+        return f" (due {m['due_on']})"
+    return ""
+
+
 def format_context(r: dict, today: dt.date | None = None) -> str:
     """Render a recall() result as the memory block placed in the system prompt."""
     today = today or dt.date.today()
@@ -1447,7 +1457,7 @@ def format_context(r: dict, today: dt.date | None = None) -> str:
         relevant += [m for m in e["memories"] if m["text"] not in seen | {x["text"] for x in relevant}]
     if relevant:
         out.append("Relevant memories:\n" + "\n".join(
-            f"- [{m['kind']}] {m['text']}" + (SENSITIVE_NOTE if m.get("sensitive") else "")
+            f"- [{m['kind']}] {m['text']}{day_note(m)}" + (SENSITIVE_NOTE if m.get("sensitive") else "")
             + (STALE_NOTE if m.get("stale") else "") for m in relevant))
     links = list(dict.fromkeys(_link_line(l) for e in r["entities"] for l in e.get("links", [])))
     if links:

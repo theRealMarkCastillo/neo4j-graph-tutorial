@@ -73,6 +73,18 @@ def test_a_move_supersedes_and_keeps_vague_dates_vague(llm_ready):
     trials(check)
 
 
+def test_a_known_day_goes_in_the_field_not_the_text(llm_ready):
+    """A day that has a field (occurred_on, due_on, valid_until) isn't repeated in the text:
+    dated sentences made unrelated memories look alike to the embedding model."""
+    def check():
+        ex = extract("Just got back from the gym, my legs are dead.")
+        dump = ex.model_dump_json(exclude_defaults=True)
+        assert not any(re.search(r"\d{4}-\d\d-\d\d", m.text) for m in ex.memories), "date in text: " + dump
+        assert any(str(f or "").startswith(WED.isoformat()) for m in ex.memories
+                   for f in (m.occurred_on, m.due_on, m.valid_until)), "day in no field: " + dump
+    trials(check)
+
+
 def test_companion_lines_are_not_a_source(llm_ready):
     def check():
         ex = extract("ugh it's so cold today", "Brr! Stay warm.",
