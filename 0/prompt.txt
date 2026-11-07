@@ -1,0 +1,1 @@
+something I'm considering.. for evals and tests.. would it be good to use something like MLflow we could use locally to have deeper traces for debugging and evals? we could adopt that framework for traces and evals?
