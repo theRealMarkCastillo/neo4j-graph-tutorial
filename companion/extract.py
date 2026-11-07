@@ -77,8 +77,12 @@ Rules:
 10. Entities: people, pets, places and organizations go in `entities`. So do NAMED things
    someone likes, dislikes, owns or does — a game, show, film, band, book, brand, product or
    hobby ("Minecraft", "Moana", "Lego", "chess") — as kind thing or activity, each with the
-   relation in rule 11. Not generic phrases ("playing in the rain", "a movie", "whiskey" as a
-   drink habit): those stay in the memory text only. For a KNOWN entity set
+   relation in rule 11. ACTIVITIES {user} or someone in their life does, named or not (the
+   gym, running, yoga, therapy, piano lessons), are entities too: kind activity, named by the
+   plain noun ("gym", "running"), and EVERY memory about doing one lists it in `about` — a
+   status ("heading to the gym"), a plan, an event, or a feeling it caused. A known activity
+   is reused by its id. Not one-off generic things ("playing in the rain", "a movie", "pizza
+   for dinner", "whiskey" as a drink habit): those stay in the memory text only. For a KNOWN entity set
    `ref` to its id. Someone who shares a name with a known entity but is clearly different
    (coworker Sam vs cousin Sam): new=true plus a distinguishing summary. Unnamed people get a
    role name ("Mom", "Riley's boss"). When {user} later gives a role-named entity its real name ("his
@@ -120,8 +124,8 @@ Examples (today 2026-11-20, {user} = Riley, existing memory m_1: "Riley lives in
   [preference] "Riley's daughter Ana loves Minecraft" about [Ana, Minecraft]; [preference] "Riley's daughter Ana
   loves the rain" (no entity for the rain: it is not a named thing).
 - "Where did I live before?" -> nothing new: empty lists.
-- (at 2026-11-20 18:00) "Off to the gym!" -> [status] "Riley is at the gym" valid_until
-  "2026-11-20T20:00", importance 2.
+- (at 2026-11-20 18:00) "Off to the gym!" -> entities: gym (activity); memories: [status]
+  "Riley is at the gym" about [gym], valid_until "2026-11-20T20:00", importance 2.
 - "I'm in Denver for the week for work" -> entities: Denver (place); NO relations (a trip is
   not where they live); [status] "Riley is in Denver for work" valid_until "2026-11-27T23:59".
 

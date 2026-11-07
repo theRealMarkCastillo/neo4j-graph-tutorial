@@ -213,3 +213,37 @@ def test_a_placeholder_is_tied_to_the_named_person(llm_ready):
         maya = [e for e in ex.entities if e.name == "Maya"]
         assert maya and "Riley's sister" in maya[0].aliases, ex.model_dump_json(exclude_defaults=True)
     trials(check)
+
+
+# --- activities someone does are entities (structure-over-prose spec, D2) -------------------
+# Habits are counted in the graph (memories ABOUT one activity on 3+ days), so the extractor
+# must link each visit to the activity, whatever the sentence says.
+
+GYM = "e_gym: gym (activity) — Riley's gym workouts"
+
+
+@pytest.mark.parametrize("msg", ["Heading to the gym, talk later!",
+                                 "Off to the gym again after work, then dinner.",
+                                 "Just got back from the gym, my legs are dead."])
+def test_a_gym_visit_is_about_the_gym_activity(llm_ready, msg):
+    def check():
+        ex = extract(msg)
+        dump = ex.model_dump_json(exclude_defaults=True)
+        assert any(e.kind == "activity" and "gym" in e.name.lower() for e in ex.entities), "no gym activity: " + dump
+        assert any(any("gym" in a.lower() for a in m.about) for m in ex.memories), "memory not about gym: " + dump
+    trials(check)
+
+
+def test_a_known_activity_is_reused(llm_ready):
+    def check():
+        ex = extract("Hit a great workout at the gym this morning", entities=[GYM])
+        dump = ex.model_dump_json(exclude_defaults=True)
+        assert any("e_gym" in m.about for m in ex.memories) or any(e.ref == "e_gym" for e in ex.entities), dump
+    trials(check)
+
+
+def test_a_one_off_dinner_is_not_an_entity(llm_ready):
+    def check():
+        ex = extract("Had pizza for dinner tonight.")
+        assert not ex.entities, ex.model_dump_json(exclude_defaults=True)
+    trials(check)
