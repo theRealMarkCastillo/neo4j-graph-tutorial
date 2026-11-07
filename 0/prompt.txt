@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b1uhg9her</task-id>
+<tool-use-id>toolu_01My9tMUPNke5LNdtqcWuA48</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-markcastillo-git-neo4j-graph-tutorial/96080432-b0b1-42b8-9cce-80fafd0c2ecb/tasks/b1uhg9her.output</output-file>
+<status>completed</status>
+<summary>Background command "Run relationship_change scenario before vs after, twice" completed (exit code 0)</summary>
+</task-notification>
