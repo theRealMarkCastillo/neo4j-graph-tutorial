@@ -129,11 +129,13 @@ A background job runs after every conversation (`close_episode`) and from `/cons
    seeing them as candidates.
 2. **Roll up.** An activity (an `activity` entity such as "gym") with occurrence memories
    (events, statuses, plans, feelings from the last 60 days) `ABOUT` it on **3 or more
-   distinct days** is a habit. Its memories go to a small LLM step,
+   distinct days** is a habit, as long as at least one of them happened (three plans from one
+   message are not a habit). Its memories go to a small LLM step,
    `extract.find_pattern()`, which writes one lasting memory or declines. The pattern is
    `ABOUT` the activity, the user gets a `practices` link to it, each member gets a
-   `SUMMARIZES` edge and a `consolidated_at` stamp, and the pattern's `evidence` is the
-   number of memories it summarizes. Once an activity has a pattern, later days attach to it
+   `SUMMARIZES` edge and a `consolidated_at` stamp, and the pattern's `evidence` grows by
+   each memory it newly summarizes (pruning a member later doesn't lower it). A memory about
+   two activities counts for each one's habit, even when the second forms later. Once an activity has a pattern, later days attach to it
    as more evidence, without asking the LLM for a new sentence.
 3. **Prune.** Delete dormant memories with importance ≤ 3 that have **expired** (`valid_until`
    has passed), but only once they're rolled up or older than the 60-day window. Events stay
@@ -239,7 +241,9 @@ uv run python -m companion.scenarios situational
   - an old minor feeling goes dormant, unless it was confirmed again;
   - an old fact is marked stale;
   - the roll-up, using a **fake pattern writer**: 3 days make a habit, one day of gym talk
-    doesn't, future plans aren't days yet, a known habit gathers evidence without a rewrite;
+    doesn't, future plans aren't days yet, plans alone aren't a habit, a known habit gathers evidence
+    without a rewrite and keeps it when members are pruned, a shared memory still counts for
+    a later habit;
   - pruning only expired, dormant trivia;
   - plans lapse;
   - a trip doesn't end the real home.
