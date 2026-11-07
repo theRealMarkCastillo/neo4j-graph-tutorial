@@ -218,3 +218,41 @@ def test_a_background_forget_is_scrubbed_from_the_conversation_next_turn(store, 
     texts = " ".join(m.content for m in out["messages"])
     assert "Jordan" not in texts and "[forgotten]" in texts
     bg.close()
+
+
+@pytest.mark.parametrize("background", [False, True])
+def test_forget_and_boundary_together_leave_no_graph_or_thread_reference(store, fake_llm, monkeypatch, background):
+    """Replay contradictory raw output even if extraction normalization is bypassed."""
+    store.apply(Extraction(entities=[EntityOut(name="Jordan", kind="person")],
+                           memories=[fact("Pytest's ex is Jordan", ["Jordan"])]), today=D1)
+    [entity] = store._q("MATCH (e:Entity {user:$user, name:'Jordan'}) RETURN e.id AS id")
+    episode_id = store.start_episode(on=D1)
+    store._q("MATCH (ep:Episode {id:$ep}) SET ep.summary = 'Jordan called Pytest'", ep=episode_id)
+    outputs = iter([
+        Extraction(forget_entities=[entity["id"]], memories=[MemoryOut(
+            text="Pytest does not want Jordan to ever be mentioned again.",
+            kind="boundary", about=[entity["id"]], importance=9)]),
+        Extraction(),
+    ])
+    monkeypatch.setattr(fake_llm, "extract_memories", lambda *_, **__: next(outputs))
+    bg = Background() if background else None
+    try:
+        app = fake_llm.build_companion(store, bg)
+        first = chat(app, "Forget Jordan, and don't ever mention him again.", episode_id)
+        if bg:
+            bg.wait(60)
+        else:
+            assert all("Jordan" not in m.content for m in first["messages"])
+        out = chat(app, "ok thanks", episode_id)
+        if bg:
+            bg.wait(60)
+        assert "Jordan" not in " ".join(m.content for m in out["messages"])
+        assert store.memories(include_retired=True, today=D1) == []
+        assert store._q("MATCH (e:Entity {user:$user, name:'Jordan'}) RETURN e") == []
+        turns = store._q("MATCH (:Episode {id:$ep})-[:HAS_TURN]->(t) RETURN t.text AS text", ep=episode_id)
+        assert turns and all("Jordan" not in t["text"] for t in turns)
+        [episode] = store._q("MATCH (ep:Episode {id:$ep}) RETURN ep.summary AS summary", ep=episode_id)
+        assert "Jordan" not in episode["summary"]
+    finally:
+        if bg:
+            bg.close()

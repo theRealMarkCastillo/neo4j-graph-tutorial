@@ -134,6 +134,18 @@ enough. Boundaries are safety-critical, so there's now a **regex tripwire**: if 
 looks like a boundary ("don't bring her up", "stop asking about…") and none was extracted,
 extract once more with an explicit hint. After that: 3/3.
 
+**Forgetting wins over a conflicting boundary.** A later live eval returned both
+`forget_entities=["e_9"]` and a boundary ABOUT `e_9`. A boundary retry could also add
+that conflict, or return a forget instruction that the retry merge discarded. Both extraction
+passes now drop memories explicitly ABOUT an entity being forgotten, resolving unambiguous
+names and ids (including aliases declared in that extraction). The retry preserves forget
+instructions too. Unrelated boundaries remain, and two people sharing a name are not merged.
+The store still resolves identities and applies forgetting last: deterministic database tests
+verify that even the raw conflicting output leaves no entity, memory, stored name, or live
+conversation reference, in synchronous and background modes. This guard does not infer a
+forget instruction the model failed to extract, or replace the store's text-mention cleanup.
+
+
 > Pattern: for the memories that matter most, don't rely on one LLM call. Pair it with a
 > cheap deterministic check.
 

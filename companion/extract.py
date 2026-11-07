@@ -240,6 +240,43 @@ def line(user: str, who: str, text: str) -> str:
     return f"{who}: {text}" if who == user else f"({who}, context only — not a source) {text}"
 
 
+def _forget_wins(ex: Extraction, entities: list[str]) -> Extraction:
+    """Drop memories explicitly ABOUT a forgotten entity before they can be reinforced.
+
+    Match names/ids structurally, never by substring or embedding. Only unambiguous
+    known names resolve to ids; two people called Sam must remain distinct. The store
+    still performs authoritative resolution and deletion, including text-only mentions.
+    """
+    if not ex.forget_entities:
+        return ex
+    refs: dict[str, set[str]] = {}
+
+    def add(name: str, ref: str) -> None:
+        refs.setdefault(name.casefold(), set()).add(ref.casefold())
+
+    # The id/name header is the contract of MemoryStore.known_entities(); ignore summaries.
+    for row in entities:
+        match = re.match(r"^([^:]+): (.*?) \((?:person|pet|place|organization|activity|thing)(?:,|\))", row)
+        if match:
+            ref, name = match.groups()
+            add(ref, ref)
+            add(name, ref)
+    for ent in ex.entities:
+        known = refs.get(ent.name.casefold(), set())
+        ref = ent.ref or (next(iter(known)) if len(known) == 1 and not ent.new else ent.name)
+        for name in [ent.name, *ent.aliases, *([ent.ref] if ent.ref else [])]:
+            add(name, ref)
+
+    def identity(name: str) -> str:
+        matches = refs.get(name.casefold(), set())
+        return next(iter(matches)) if len(matches) == 1 else name.casefold()
+
+    forgotten = {identity(name) for name in ex.forget_entities}
+    return ex.model_copy(update={"memories": [
+        m for m in ex.memories if not any(identity(name) in forgotten for name in m.about)
+    ]})
+
+
 # Traced with its exact arguments: companion.trace_to_case turns a trace into an eval case.
 @traced("extract_memories", "CHAIN")
 def extract_memories(user: str, user_msg: str, assistant_msg: str, candidates: list[dict],
@@ -261,11 +298,13 @@ def extract_memories(user: str, user_msg: str, assistant_msg: str, candidates: l
         retry = _run(system, content + f"\n\nNOTE: {user}'s latest message MAY ask the companion "
                      "to avoid a person or topic. If it does, record a boundary memory with that "
                      "person or topic in `about`. If it only describes their own behaviour, "
-                     "return empty lists.")
+                     "return empty lists. If the user asks to forget that person or topic entirely, "
+                     "return forget_entities instead of a boundary; forgetting wins.")
+        ex.forget_entities = list(dict.fromkeys([*ex.forget_entities, *retry.forget_entities]))
         boundaries = [m for m in retry.memories if m.kind == "boundary"]
         ex.memories += boundaries
         ex.entities += [e for e in retry.entities if e.name not in {x.name for x in ex.entities}]
-    return ex
+    return _forget_wins(ex, entities)
 
 
 @traced("extract_episode", "CHAIN")
@@ -276,8 +315,9 @@ def extract_episode(user: str, transcript: str, candidates: list[dict], entities
     if not transcript.strip():
         return Extraction()
     today = today or dt.date.today()
-    return _run(_system(REFRESH_SYSTEM if refresh else EPISODE_SYSTEM, user, candidates, entities, today),
-                transcript)
+    ex = _run(_system(REFRESH_SYSTEM if refresh else EPISODE_SYSTEM, user, candidates, entities, today),
+              transcript)
+    return _forget_wins(ex, entities)
 
 
 def summarize_episode(user: str, transcript: str, today: dt.date | None = None) -> EpisodeSummary | None:
