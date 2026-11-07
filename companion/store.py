@@ -1110,10 +1110,11 @@ class MemoryStore:
         """Background upkeep (Lesson 13). Run after a conversation, or nightly:
 
         1. lapse   open plans long past due stop being followed up
-        2. roll up repeated situational memories ("at the gym" x3) into one lasting pattern,
-                   written by `writer(user, texts, today) -> MemoryOut | None` (an LLM call,
-                   injected so tests can use a fake); the members are marked consolidated
-        3. prune   delete dormant, low-importance statuses and feelings (data minimization),
+        2. roll up memories ABOUT one activity on 3+ days ("at the gym" x3) into one lasting
+                   pattern (see _habits), written by `writer(user, texts, today) -> MemoryOut
+                   | None` (an LLM call, injected so tests can use a fake); the members are
+                   marked consolidated and the user -practices-> the activity
+        3. prune   delete dormant, low-importance memories that have expired (data minimization),
                    but only once they're rolled up or older than the pattern window: pruning
                    earlier would delete the repeats before they could ever form a pattern
         4. orphans entities with no memory and no link left are deleted (see _drop_orphans)
@@ -1198,10 +1199,12 @@ class MemoryStore:
         return log
 
     def _prune(self, now: dt.datetime) -> list[str]:
-        """Delete dormant trivia: one statement, so it's atomic without _write()."""
+        """Delete dormant trivia: one statement, so it's atomic without _write(). Only what
+        was temporary and has ended (valid_until passed): "temporary" is read from the field,
+        not from `kind` (structure-over-prose spec). Kind still sets how fast it decays."""
         dormant = [r for r in self._q(
             """
-            MATCH (m:Memory {user: $user}) WHERE m.kind IN ['status', 'feeling']
+            MATCH (m:Memory {user: $user}) WHERE m.valid_until IS NOT NULL AND m.valid_until <= $now
               AND m.importance <= $max_imp AND NOT EXISTS { (m)<-[:SUPERSEDES]-() }
               AND (m.consolidated_at IS NOT NULL OR m.created_at < $now - duration({days: $days}))
             RETURN m.id AS id, m.kind AS kind, m.importance AS importance,
@@ -1211,7 +1214,7 @@ class MemoryStore:
         if not dormant:
             return []
         self._q("MATCH (m:Memory) WHERE m.id IN $ids DETACH DELETE m", ids=[r["id"] for r in dormant])
-        return [f"pruned {len(dormant)} dormant status/feeling memories"]
+        return [f"pruned {len(dormant)} dormant expired memories"]
 
     # ------------------------------------------------------------------ inspection
     def memories(self, kind: str | None = None, include_retired: bool = False,
@@ -1241,7 +1244,7 @@ class MemoryStore:
         return self._q(
             """
             MATCH (m:Memory {user: $user})
-            WHERE m.kind IN ['event', 'plan'] AND coalesce(m.occurred_on, m.due_on) IS NOT NULL
+            WHERE coalesce(m.occurred_on, m.due_on) IS NOT NULL  // anything with a day, whatever its kind
               AND """ + visible("m") + """
             RETURN coalesce(m.occurred_on, m.due_on) AS date, m.kind AS kind, m.text AS text,
                    m.status AS status, m.invalidated_at IS NOT NULL AS retired

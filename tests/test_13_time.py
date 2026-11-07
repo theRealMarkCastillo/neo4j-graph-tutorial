@@ -266,13 +266,14 @@ def test_writer_can_decline(store):
 
 
 def test_prune_deletes_only_dormant_trivia(store):
+    end_of_day = f"{D1.isoformat()}T23:59"  # feelings end with the day (extraction rule 3)
     store.apply(Extraction(memories=[
-        mem("Pytest felt grumpy about the rain", "feeling", 2),
-        mem("Pytest felt overjoyed at their wedding", "feeling", 9),
+        mem("Pytest felt grumpy about the rain", "feeling", 2, valid_until=end_of_day),
+        mem("Pytest felt overjoyed at their wedding", "feeling", 9, valid_until=end_of_day),
         mem("Pytest went to a concert", "event", 2)]), today=D1)
     assert store.consolidate(D1 + dt.timedelta(days=30)) == []  # dormant, but may still form a pattern
     log = store.consolidate(D1 + dt.timedelta(days=61))         # past the pattern window: prune
-    assert log == ["pruned 1 dormant status/feeling memories"]
+    assert log == ["pruned 1 dormant expired memories"]
     left = {m["text"] for m in store.memories(include_retired=True, today=D1 + dt.timedelta(days=61))}
     assert left == {"Pytest felt overjoyed at their wedding", "Pytest went to a concert"}
 
@@ -280,11 +281,24 @@ def test_prune_deletes_only_dormant_trivia(store):
 def test_consolidated_details_are_pruned_once_dormant(store):
     for i, text in enumerate(["Pytest is at the gym", "Pytest went to the gym after work",
                               "Pytest is heading to the gym for leg day"]):
-        did(store, text, "status", i)
+        did(store, text, "status", i, valid_until=f"{(D1 + dt.timedelta(days=i)).isoformat()}T14:00")
     log = store.consolidate(D1 + dt.timedelta(days=10), writer=fake_writer([]))
-    assert "pruned 3 dormant status/feeling memories" in log
+    assert "pruned 3 dormant expired memories" in log
     [p] = store._q("MATCH (p:Memory {user:$user}) WHERE p.evidence IS NOT NULL RETURN p.evidence AS n")
     assert p["n"] == 3
+
+
+def test_prune_needs_an_expiry(store):
+    """"Temporary" is a property (structure-over-prose spec, D4): only a memory whose
+    valid_until has passed is pruned. A feeling stored without one is kept."""
+    store.apply(Extraction(memories=[mem("Pytest felt grumpy", "feeling", 2)]), today=D1)  # no valid_until
+    assert store.consolidate(D1 + dt.timedelta(days=61)) == []
+
+
+def test_an_expired_event_is_pruned_like_a_status(store):
+    store.apply(Extraction(memories=[mem("Pytest was stuck in traffic", "event", 2,
+                                         valid_until=f"{D1.isoformat()}T18:00")]), today=D1)
+    assert store.consolidate(D1 + dt.timedelta(days=400)) == ["pruned 1 dormant expired memories"]
 
 
 def test_old_open_plans_lapse(store):
