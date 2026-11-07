@@ -1,0 +1,50 @@
+<bash-input>uv run --group observability python -m companion.scenarios situational</bash-input><bash-stdout>=== situational: Short-lived statuses expire, get a follow-up, and roll up into a habit
+  -- session 1 (2026-11-18)
+  Sage: Hi Riley, I'm Sage. I'd love to get to know you — how's your day going?
+  Riley: Heading to the gym, talk later!
+  Sage: Have a great workout! Catch you later!
+     ✎ + [status] Riley is at the gym. (until 2026-11-18 14:00)  [new: nothing similar with the same dates]
+     ✎ episode saved: On 2026-11-18, Riley briefly checked in to mention that they were heading out to the gym. Sage wished them a great workout and agreed to catch up later. The brief exchange ended naturally with no unresolved topics left open. (mood: Upbeat and energetic)
+  -- session 2 (2026-11-19)
+  Sage: Hey Riley, good to see you! How did your workout go yesterday?
+  Riley: Morning! I slept terribly though.
+  Sage: Morning! Ah, I’m so sorry to hear that—waking up after a rough night makes the whole day feel like an uphill climb.
+
+Did your mind just keep spinning, or did yesterday's workout leave you too sore to get comfortable?
+     ✎ + [feeling] Riley slept terribly the night before 2026-11-19. (until 2026-11-19 23:59)  [new: nothing similar with the same dates]
+     ✎ episode saved: Riley checked in on the morning of 2026-11-19, sharing that they had slept terribly. Sage sympathized with how difficult a rough night can make the day feel. Sage then asked whether Riley had experienced a racing mind or if physical soreness from the previous day's workout had kept them uncomfortable, leaving the question open. (mood: Tired and unrested)
+  -- session 3 (2026-11-20)
+  Sage: Hey Riley, happy Friday! I hope you were able to catch up on some better sleep last night—how are you feeling today?
+  Riley: Just got back from the gym, my legs are dead.
+  Sage: Oof, sounds like a brutal leg day. Definitely a good excuse to avoid stairs for the rest of the day!
+
+Were you able to get some better sleep last night to fuel that workout, at least?
+     ✎ + [feeling] Riley's legs are exhausted after working out at the gym on 2026-11-20. (until 2026-11-20 23:59)  [new: nothing similar with the same dates]
+     ✎ episode saved: On 2026-11-20, Riley mentioned that they had just returned from the gym with exhausted legs after a tough workout. Sage sympathized with the brutal leg session and jokingly recommended avoiding stairs for the rest of the day. Sage also checked in to ask if Riley had managed to get better sleep the previous night to help fuel the workout. (mood: Physically tired)
+  -- session 4 (2026-11-21)
+  Sage: Hey Riley! Happy Saturday—how are your legs holding up today after that brutal gym session yesterday?
+  Riley: Off to the gym again after work, then dinner.
+  Sage: Look at you, back at it! Hopefully your legs have forgiven you a bit after yesterday.
+
+What are you hitting today—upper body? And more importantly, any fun dinner plans lined up to refuel after?
+     ✎ + [plan] Riley plans to go to the gym after work, followed by dinner, on 2026-11-21.  [new: nothing similar with the same dates]
+     ✎ episode saved: On 2026-11-21, Riley shared that they were heading to the gym again after work, with dinner plans lined up afterward. Sage encouraged their dedication to their workout routine and acknowledged potential soreness from their previous session on 2026-11-20. Sage asked about Riley's workout focus for the day and inquired about what they planned to have for dinner. (mood: motivated and active)
+  -- session 5 (2026-11-23)
+  Sage: Hey Riley! Hope you had a great weekend—how did your workout and dinner end up going on Saturday?
+  Riley: Gym again before work today, trying to keep the streak going.
+  Sage: Look at you, starting the week strong! You’ve had some serious momentum going lately, and knocking it out before work even started is huge.
+
+How are your energy levels holding up now that you're halfway through the day?
+     ✎ plan done m_0e2050
+     ✎ + [event] Riley went to the gym before work on 2026-11-23 to keep a workout streak going.  [new: nothing similar with the same dates]
+     ✎ episode saved: On 2026-11-23, Riley shared that they went to the gym before work to keep their workout streak going strong. Sage praised their consistency and dedication to kicking off the week with momentum. The conversation closed with Sage asking how Riley's energy levels were holding up halfway through the day. (mood: Motivated and disciplined)
+     ✎ (upkeep) pattern from 3 memories: + [preference] Riley works out at the gym regularly.  [new: nothing similar with the same dates]
+     ✎ (upkeep) pruned 1 dormant status/feeling memories
+  PASS  the gym was stored as a status that expires
+  PASS  the next day nothing says they're at the gym now
+  PASS  the next day's greeting asks about the gym
+  PASS  three gym visits became one lasting habit
+
+=== Summary
+  situational            4/4
+  total                  4/4</bash-stdout><bash-stderr></bash-stderr>
