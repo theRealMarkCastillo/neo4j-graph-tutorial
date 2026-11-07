@@ -1,0 +1,1 @@
+well.. LLM_AGENT_MODEL should be set in config only not anywhere else?
