@@ -1,0 +1,1 @@
+ugh. No I mean.. I wanted all configs to be in config using .env , not hard coded in config.py
