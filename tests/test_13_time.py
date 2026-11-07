@@ -298,6 +298,42 @@ def test_a_known_habit_gathers_new_evidence_without_a_rewrite(store):
     assert habit(store) == [{"evidence": 6, "about": ["gym"]}]
 
 
+def test_pruning_members_does_not_shrink_the_evidence(store):
+    """Final review: evidence was recounted from SUMMARIZES edges, and pruning an expired
+    member deletes its edge, so a habit built from statuses never grew past 3-5 days."""
+    for day in range(3):
+        did(store, "Pytest is at the gym", "status", day)
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer([]))
+    for day in range(10, 13):
+        did(store, "Pytest is at the gym", "status", day)
+    store.consolidate(D1 + dt.timedelta(days=13), writer=fake_writer([]))
+    assert habit(store) == [{"evidence": 6, "about": ["gym"]}]
+
+
+def test_plans_alone_are_not_a_habit(store):
+    """Final review: "gym Mon, Wed, Fri next week" is three plans from one message. Once the
+    days pass they would count as three visits nobody confirmed. Plans still count, next to
+    at least one thing that happened."""
+    for day in (1, 3, 5):
+        did(store, "Pytest plans to go to the gym", "plan", 0, due_on=(D1 + dt.timedelta(days=day)).isoformat())
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=7), writer=fake_writer(calls), prune=False)
+    assert calls == []
+
+
+def test_a_shared_memory_still_counts_for_a_later_habit(store):
+    """Final review: once the gym habit summarized "ran to the gym", the global
+    consolidated_at hid it from running, which then never reached 3 days."""
+    did(store, "Pytest went to the gym", "event", 0)
+    for day in (1, 2):
+        did(store, f"Pytest ran to the gym, day {day}", "event", day, about=("gym", "running"))
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer([]), prune=False)
+    did(store, "Pytest went running", "event", 4, about=("running",))
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=5), writer=fake_writer(calls), prune=False)
+    assert len(calls) == 1 and len(calls[0]) == 3, calls
+
+
 def test_shared_members_are_counted_once(store):
     """Review finding: a memory ABOUT gym and yoga summarized by one pattern (the second
     write deduped into the first) added its members twice: evidence 6 for 3 memories."""

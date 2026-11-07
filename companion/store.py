@@ -1167,12 +1167,15 @@ class MemoryStore:
         plan's due day once it has come), else the day it was said; several mentions on one
         day count once. A plan still in the future isn't a day yet, and valid_until is when a
         status ends, not another day ("gym Mon, Wed, Fri next week" is one message, not a
-        habit). Occurrences only (event, status, plan, feeling): facts and preferences are
+        habit), and plans alone are no habit until something happened. Occurrences only (event, status, plan, feeling): facts and preferences are
         what a habit becomes. `pattern` is the activity's current habit memory, if any."""
         return self._q(
             """
             MATCH (a:Entity {user: $user, kind: 'activity'})<-[:ABOUT]-(m:Memory {user: $user})
-            WHERE m.invalidated_at IS NULL AND m.consolidated_at IS NULL
+            WHERE m.invalidated_at IS NULL
+              // already evidence for THIS activity's habit; a memory about two activities
+              // still counts for the other one, even in a later run
+              AND NOT EXISTS { (p:Memory)-[:SUMMARIZES]->(m) WHERE (p)-[:ABOUT]->(a) }
               AND m.kind IN ['event', 'status', 'plan', 'feeling']
               AND coalesce(m.status, '') <> 'lapsed'  // a plan that never happened is no evidence
               AND NOT coalesce(m.sensitive, false)
@@ -1181,8 +1184,9 @@ class MemoryStore:
               AND NOT coalesce(m.due_on > date($now), false)  // not yet: no evidence
             WITH a, m, coalesce(m.occurred_on, m.due_on, date(m.created_at)) AS day
             ORDER BY m.created_at
-            WITH a, collect(m {.id, .text}) AS members, count(DISTINCT day) AS days
-            WHERE days >= $min
+            WITH a, collect(m {.id, .text}) AS members, count(DISTINCT day) AS days,
+                 count(CASE WHEN m.kind <> 'plan' THEN 1 END) AS happened
+            WHERE days >= $min AND happened > 0  // plans alone: nobody said it happened
             RETURN a.id AS activity, a.name AS name, members,
                    COLLECT { MATCH (p:Memory {user: $user})-[:ABOUT]->(a)
                              WHERE p.evidence IS NOT NULL AND p.invalidated_at IS NULL
@@ -1204,15 +1208,19 @@ class MemoryStore:
         return log
 
     def _summarize(self, pattern_ids: list[str], members: list[dict], now: dt.datetime) -> None:
-        """Link a pattern to its members. evidence is the number of members it summarizes,
-        counted from the edges, so a member linked twice (a memory about two activities whose
-        patterns turned out to be one) counts once."""
+        """Link a pattern to its members. evidence goes up by the members newly linked: a
+        member linked twice (a memory about two activities whose patterns turned out to be
+        one) counts once, and pruning a member later (its edge goes too) doesn't lower it."""
         self._q(
             """
             MATCH (p:Memory {user: $user}) WHERE p.id IN $pattern
-            MATCH (m:Memory) WHERE m.id IN $ids
-            SET m.consolidated_at = $now MERGE (p)-[:SUMMARIZES]->(m)
-            WITH DISTINCT p SET p.evidence = COUNT { (p)-[:SUMMARIZES]->() }
+            CALL (p) {
+              MATCH (m:Memory) WHERE m.id IN $ids
+              WITH m, EXISTS { (p)-[:SUMMARIZES]->(m) } AS had
+              SET m.consolidated_at = $now MERGE (p)-[:SUMMARIZES]->(m)
+              RETURN count(CASE WHEN NOT had THEN 1 END) AS added
+            }
+            SET p.evidence = coalesce(p.evidence, 0) + added
             """, now=now, pattern=pattern_ids, ids=[r["id"] for r in members])
 
     def _prune(self, now: dt.datetime) -> list[str]:
