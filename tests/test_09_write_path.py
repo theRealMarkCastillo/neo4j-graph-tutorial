@@ -9,6 +9,7 @@ import datetime as dt
 import pytest
 from pydantic import ValidationError
 
+from companion import store as store_module
 from companion.models import EntityOut, Extraction, MemoryOut, RelationOut
 
 T = dt.date(2026, 11, 5)
@@ -388,3 +389,60 @@ def test_a_repeated_memory_gains_the_entities_it_names(store):
                                          about=["Logan", "Minecraft"])]), None, T)
     [m] = store.memories()
     assert sorted(m["about"]) == ["Logan", "Minecraft"]
+
+
+
+MAYA_BOSTON = dict(entities=[EntityOut(name="Maya", kind="person"), EntityOut(name="Boston", kind="place")])
+
+def test_a_wording_match_about_other_entities_is_new(store, monkeypatch):
+    monkeypatch.setattr(store_module, "DUPLICATE_SCORE", 0.0)  # wording says "same" for anything
+    store.apply(Extraction(**MAYA_BOSTON, memories=[mem("Pytest's sister Maya lives in Boston", about=["Maya", "Boston"])]), today=T)
+    log = store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person"), EntityOut(name="Seattle", kind="place")],
+                                 memories=[mem("Pytest's sister Maya lives in Seattle", about=["Maya", "Seattle"])]), today=T)
+    assert len(store.memories()) == 2, log
+
+def test_a_wording_match_about_the_same_entities_is_reinforced(store, monkeypatch):
+    monkeypatch.setattr(store_module, "DUPLICATE_SCORE", 0.0)
+    store.apply(Extraction(**MAYA_BOSTON, memories=[mem("Pytest's sister Maya lives in Boston", about=["Maya", "Boston"])]), today=T)
+    log = store.apply(Extraction(**MAYA_BOSTON, memories=[mem("Maya, Pytest's sister, lives in Boston", about=["Maya", "Boston"])]), today=T)
+    assert any(line.startswith("reinforced") for line in log), log
+
+def test_a_vetoed_nearest_does_not_hide_an_allowed_match(store, monkeypatch):
+    monkeypatch.setattr(store_module, "DUPLICATE_SCORE", 0.0)
+    store.apply(Extraction(**MAYA_BOSTON, memories=[mem("Pytest's sister Maya lives in Boston", about=["Maya", "Boston"])]), today=T)
+    store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person")],
+                           memories=[mem("Pytest's sister Maya is a nurse", about=["Maya"])]), today=T)
+    # nearest by wording is the Boston memory (vetoed: Boston isn't named); the nurse one is allowed
+    log = store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person")],
+                                 memories=[mem("Pytest's sister Maya lives in Boston", about=["Maya"])]), today=T)
+    [hit] = [line for line in log if line.startswith("reinforced")]
+    assert "nurse" in hit, log
+
+def test_dropping_an_entity_on_a_re_read_stores_a_copy(store, monkeypatch):
+    monkeypatch.setattr(store_module, "DUPLICATE_SCORE", 0.0)
+    store.apply(Extraction(**MAYA_BOSTON, memories=[mem("Pytest's sister Maya lives in Boston", about=["Maya", "Boston"])]), today=T)
+    store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person")],
+                           memories=[mem("Pytest's sister Maya lives in Boston", about=["Maya"])]), today=T)
+    assert len(store.memories()) == 2
+
+def test_repeats_about_other_entities_in_one_extraction_are_both_kept(store, monkeypatch):
+    monkeypatch.setattr(store_module, "DUPLICATE_SCORE", 0.0)
+    store.apply(Extraction(entities=[EntityOut(name="running", kind="activity"), EntityOut(name="swimming", kind="activity")],
+                           memories=[mem("Pytest went running", "event", about=["running"]),
+                                     mem("Pytest went swimming", "event", about=["swimming"])]), today=T)
+    assert len(store.memories()) == 2
+
+
+def test_a_tombstone_only_blocks_memories_about_its_entities(store, monkeypatch):
+    monkeypatch.setattr(store_module, "FORGOTTEN_SCORE", 0.0)  # wording says "the forgotten one" for anything
+    ep = store.start_episode(on=T)
+    store.apply(Extraction(entities=[EntityOut(name="Jordan", kind="person"), EntityOut(name="Denver", kind="place")],
+                           memories=[mem("Pytest's ex Jordan moved to Denver", about=["Jordan", "Denver"])]), ep, T)
+    [m] = store.memories()
+    assert store.forget(m["id"])
+    log = store.apply(Extraction(entities=[EntityOut(name="Denver", kind="place")],
+                                 memories=[mem("Pytest is moving to Denver next year", about=["Denver"])]), ep, T)
+    assert [x["text"] for x in store.memories()] == ["Pytest is moving to Denver next year"], log
+    log = store.apply(Extraction(entities=[EntityOut(name="Jordan", kind="person"), EntityOut(name="Denver", kind="place")],
+                                 memories=[mem("Jordan, Pytest's ex, moved to Denver", about=["Jordan", "Denver"])]), ep, T)
+    assert len(store.memories()) == 1, log

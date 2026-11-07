@@ -246,3 +246,24 @@ Expected: no new failures compared with the last run on the base branch.
 git add lessons/09-memory-write-path.md lessons/13-memory-over-time.md docs/design-decisions.md docs/glossary.md companion/calibrate.py
 git commit -m "Document the entity veto and the expiry-based trip guard"
 ```
+
+## Implementation record (2026-11-06)
+
+Implemented Tasks 1–5 on `codex/structural-matching`. Execution differences and validation:
+
+- The `superpowers:executing-plans` skill and Opus model were unavailable. Followed this
+  plan directly; an independent available-model review found no blocking correctness issues.
+- Added seven database regression cases, observed them fail on the original store, then
+  pass with the fixes. The plan's zero-threshold tests also exposed the original empty-list
+  `max(..., default=0)` behaviour; empty candidate sets now score negative infinity.
+- Added six unit cases for scenario log retention and expiry detection. Updated two trace
+  assertions for the new explanation mentioning dates and entities.
+- Full non-LLM suite: **246 passed, 49 deselected** against local Neo4j. Final focused rerun:
+  **94 passed, 6 deselected**.
+- Live scenario + extraction suite: **33 passed, 1 failed** (21m21s). All 14 scenarios passed.
+  `test_forget_wins_over_boundary` returned both `forget_entities` and a boundary. The
+  extractor, its models, and that test are unchanged from the base; this failure is in an unchanged extraction path, so it appears unrelated to this change.
+  The live suite is not a passing release check. A three-trial focused rerun is recorded below.
+- No re-extraction of real users, merge, or push. Only isolated test/eval users were used.
+- Focused rerun with `EVAL_TRIALS=3`: **1 test passed** (all three trials, 3m32s).
+  This supports an intermittent model-output failure; it does not erase the original result.

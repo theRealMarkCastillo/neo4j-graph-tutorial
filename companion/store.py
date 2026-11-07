@@ -514,16 +514,18 @@ class MemoryStore:
                     continue
                 resolved.append((rel, *((b, a) if flip else (a, b)), canon, "flipped" if flip else how))
         # Guard (Lesson 13): a one-at-a-time relation (lives_in) to something that only a
-        # temporary status mentions is a trip, not a move. Applying it would end the real home.
-        temporary = {n.lower() for m in ex.memories if m.kind == "status" for n in m.about}
-        lasting = {n.lower() for m in ex.memories if m.kind != "status" for n in m.about}
+        # temporary memory mentions is a trip, not a move. Applying it would end the real home.
+        temporary = {n.lower() for m in ex.memories
+                     if clock.parse_until(m.valid_until, now, m.kind) is not None for n in m.about}
+        lasting = {n.lower() for m in ex.memories
+                   if clock.parse_until(m.valid_until, now, m.kind) is None for n in m.about}
         kept = []
         for item in resolved:
             rel, canon = item[0], item[3]
             target = rel.target.lower()
             if (not rel.ended and ontology.rule(canon, "cardinality") == "one"
                     and target in temporary and target not in lasting):
-                log.append(f"ignored {rel.source} -{canon}-> {rel.target}: only a temporary status "
+                log.append(f"ignored {rel.source} -{canon}-> {rel.target}: only a temporary memory "
                            "mentions it (a trip, not a move)")
                 continue
             kept.append(item)
@@ -646,17 +648,19 @@ class MemoryStore:
 
         vectors = embed([m.text for m in ex.memories]) if ex.memories else []
         tombstones = self._tombstones(episode_id)
-        stored: list = []  # vectors created in THIS transaction: the vector index can't see them yet
+        # Vectors created in THIS transaction: the vector index cannot see them yet.
+        stored: list[tuple[np.ndarray, set[str]]] = []
         for mem, vec in zip(ex.memories, vectors):
             until = clock.parse_until(mem.valid_until, now, mem.kind)
+            about_ids = {eid for n in mem.about if (eid := self._lookup(n, known)) and eid != self.user}
             # Each decision says WHY in its log line (the web UI shows them as they happen).
             # These two compare raw cosine in Python; the index lookup below uses its 0-1 score.
-            gone = max((float(np.dot(vec, t)) for t in tombstones), default=0.0)
+            gone = max((float(np.dot(vec, t)) for t, ids in tombstones if ids <= about_ids), default=float("-inf"))
             if gone >= FORGOTTEN_SCORE:
                 log.append("skipped a memory the user asked to forget earlier in this conversation "
                            f"(cosine {gone:.3f} ≥ {FORGOTTEN_SCORE})")
                 continue
-            repeat = max((float(np.dot(vec, v)) for v in stored), default=0.0)
+            repeat = max((float(np.dot(vec, v)) for v, ids in stored if ids <= about_ids), default=float("-inf"))
             if repeat >= DUPLICATE_SCORE:
                 log.append(f"skipped a repeat within this extraction: {mem.text} "
                            f"(cosine {repeat:.3f} ≥ {DUPLICATE_SCORE})")
@@ -671,9 +675,10 @@ class MemoryStore:
                   // same but is a real correction; an identical "replacement" is just a duplicate
                   AND coalesce(node.due_on, date('1900-01-01')) = coalesce($due, date('1900-01-01'))
                   AND coalesce(node.occurred_on, date('1900-01-01')) = coalesce($occurred, date('1900-01-01'))
+                  AND all(x IN [(node)-[:ABOUT]->(e) WHERE NOT e:User | e.id] WHERE x IN $about)
                 RETURN node.id AS id, node.text AS text, score ORDER BY score DESC LIMIT 1
                 """,
-                vec=vec, due=_to_date(mem.due_on), occurred=_to_date(mem.occurred_on),
+                vec=vec, about=sorted(about_ids), due=_to_date(mem.due_on), occurred=_to_date(mem.occurred_on),
             )
             dup = [n for n in nearest if n["score"] >= DUPLICATE_SCORE]
             if dup:  # already known: reinforce instead of storing a near-copy
@@ -710,7 +715,7 @@ class MemoryStore:
                 continue
 
             mid = _new_id("m")
-            stored.append(vec)
+            stored.append((vec, about_ids))
             self.written_ids.append(mid)
             about = [eid for n in (mem.about or ["user"]) if (eid := self._lookup(n, known))]
             retired = q(
@@ -748,7 +753,7 @@ class MemoryStore:
             if self._private(mem):
                 flags += f" (private to {self.agent})"
             why = (f"  [new: closest known {nearest[0]['score']:.3f} < {DUPLICATE_SCORE}]" if nearest
-                   else "  [new: nothing similar with the same dates]")
+                   else "  [new: nothing similar with the same dates and entities]")
             log.append(f"+ [{mem.kind}] {mem.text}{flags}" + (f"  (replaces {', '.join(retired)})" if retired else "") + why)
 
         # Provenance: each edge lists the memories that support it, those about BOTH its ends
@@ -1292,13 +1297,14 @@ class MemoryStore:
         """User-requested forgetting: hard delete (privacy beats provenance here).
 
         The turns that produced it are still in this episode's transcript, and the
-        end-of-episode pass would extract it again. So a tombstone keeps only its embedding
-        (no text), scoped to that episode, and apply() skips anything that matches it."""
+        end-of-episode pass would extract it again. A tombstone keeps its embedding and
+        non-user entity ids (no text), scoped to that episode. apply() skips matching memories."""
         deleted = bool(self._q(
             """
             MATCH (m:Memory {id: $id, user: $user})
             OPTIONAL MATCH (m)-[:FROM]->(ep:Episode)
             CREATE (t:Forgotten {user: $user, episode: coalesce(ep.id, ''), at: datetime()})
+            SET t.about = [(m)-[:ABOUT]->(e) WHERE NOT e:User | e.id]
             WITH m, m.id AS id, t
             CALL (m, t) { WITH * WHERE m[$vprop] IS NOT NULL  // none yet if made before a model switch
                           CALL db.create.setNodeVectorProperty(t, $vprop, m[$vprop]) }
@@ -1315,8 +1321,8 @@ class MemoryStore:
             return []
         # a tombstone from before an embedding-model switch has no vector for this model (Lesson 19)
         rows = self._q("MATCH (t:Forgotten {user: $user, episode: $ep}) WHERE t[$vprop] IS NOT NULL "
-                       "RETURN t[$vprop] AS v", ep=episode_id)
-        return [np.asarray(r["v"]) for r in rows]
+                       "RETURN t[$vprop] AS v, coalesce(t.about, []) AS about", ep=episode_id)
+        return [(np.asarray(r["v"]), set(r["about"])) for r in rows]
 
     def forget_entity(self, name: str, known: dict[str, str] | None = None) -> dict | None:
         """"Forget everything about Jordan": delete the entity and every memory about or naming
