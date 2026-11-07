@@ -1,0 +1,1 @@
+potential bug. see local docker installation. I had chats about my son logan his likes and stuff, but no memory nodes added for Logan. Shouldn't the graph expand into adding more nodes?
