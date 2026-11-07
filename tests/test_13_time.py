@@ -9,9 +9,8 @@ import datetime as dt
 import pytest
 
 from companion import clock, decay
-from companion.models import Extraction, MemoryOut
-from companion.embeddings import embed_for_clustering
-from companion.store import PATTERN_SIMILARITY, _clusters, format_context
+from companion.models import EntityOut, Extraction, MemoryOut
+from companion.store import format_context
 
 D1 = dt.date(2026, 11, 18)      # noon on a Wednesday, per clock.now_for
 NOON = clock.now_for(D1)
@@ -172,50 +171,97 @@ def fake_writer(calls):
     return write
 
 
-def test_clustering_finds_the_group_an_early_pair_would_hide():
-    """Regression from the scenario run. In time order, "heading" and "just got back" pair up
-    first (0.86); "after work" (0.80 to "got back") and "before work" (0.81) can't join, so
-    first-fit made two pairs. heading / after work / before work are all >= 0.85 to each
-    other: that's the group of three to find."""
-    texts = ["Riley is heading to the gym",
-             "Riley just got back from the gym.",
-             "Riley's legs feel exhausted after a gym session.",
-             "Riley is going to the gym after work and then having dinner",
-             "Riley is at the gym before work."]
-    rows = [{"text": t, "vec": v} for t, v in zip(texts, embed_for_clustering(texts), strict=True)]
-    groups = _clusters(rows, PATTERN_SIMILARITY, 3)
-    # One group with those three. A stronger model (Lesson 19) may also see "just got back"
-    # and "legs exhausted" as the same habit, which is right too: the regression was TWO pairs.
-    assert len(groups) == 1 and {texts[0], texts[3], texts[4]} <= {r["text"] for r in groups[0]}
+def did(store, text, kind="status", day=0, about=("gym",), **kw):
+    """One memory on day D1 + `day`, ABOUT the given activities (created if new)."""
+    store.apply(Extraction(entities=[EntityOut(name=a, kind="activity") for a in about],
+                           memories=[mem(text, kind, 2, about=list(about), **kw)]),
+                today=D1 + dt.timedelta(days=day))
 
 
-def test_clustering_does_not_chain():
-    """a~b and b~c, but a is not like c: complete linkage keeps a group of three from forming."""
-    a, b, c = [1.0, 0.0], [0.8, 0.6], [0.28, 0.96]   # a.b = 0.8, b.c = 0.8, a.c = 0.28
-    rows = [{"text": n, "vec": v} for n, v in zip("abc", (a, b, c))]
-    assert _clusters(rows, 0.75, 3) == []
-    assert len(_clusters(rows, 0.75, 2)) == 1
+def habit(store):
+    return store._q(
+        """
+        MATCH (p:Memory {user: $user}) WHERE p.evidence IS NOT NULL
+        OPTIONAL MATCH (p)-[:ABOUT]->(a:Entity {kind: 'activity'})
+        RETURN p.evidence AS evidence, collect(a.name) AS about
+        """)
 
 
-def test_repeated_statuses_roll_up_into_a_pattern(store):
-    for i, text in enumerate(["Pytest is at the gym", "Pytest went to the gym after work",
-                              "Pytest is heading to the gym for leg day", "Pytest had pizza for dinner"]):
-        store.apply(Extraction(memories=[mem(text, "status", 2)]), today=D1 + dt.timedelta(days=i))
+def test_three_days_at_the_gym_make_a_habit(store):
+    """A habit is a graph count (structure-over-prose spec, D3): memories ABOUT one activity
+    on 3+ distinct days. A plan counts: saying "going to the gym after work" is evidence."""
+    did(store, "Pytest is at the gym", "status", 0)
+    did(store, "Pytest plans to go to the gym after work", "plan", 1, due_on=(D1 + dt.timedelta(days=1)).isoformat())
+    did(store, "Pytest went to the gym", "event", 3, occurred_on=(D1 + dt.timedelta(days=3)).isoformat())
     calls = []
     log = store.consolidate(D1 + dt.timedelta(days=4), writer=fake_writer(calls), prune=False)
-    assert len(calls) == 1 and len(calls[0]) == 3 and not any("pizza" in t for t in calls[0])
-    assert any("pattern from 3 memories" in line for line in log)
-    links = store._q("MATCH (p:Memory {user:$user})-[:SUMMARIZES]->(m) RETURN p.text AS p, count(m) AS n")
-    assert links == [{"p": "Pytest works out at the gym regularly", "n": 3}]
-    [p] = store._q("MATCH (p:Memory {user:$user}) WHERE p.evidence IS NOT NULL RETURN p.evidence AS n")
-    assert p["n"] == 3  # kept on the pattern, so pruning the details later loses nothing
+    assert len(calls) == 1 and len(calls[0]) == 3, (calls, log)
+    assert habit(store) == [{"evidence": 3, "about": ["gym"]}]
+    assert store._q("""MATCH (:User {id: $user})-[r:RELATED {type: 'practices'}]->(a:Entity {name: 'gym'})
+                       WHERE r.until IS NULL RETURN a""")
     # running it again finds nothing new: members are marked consolidated
     assert store.consolidate(D1 + dt.timedelta(days=4), writer=fake_writer(calls), prune=False) == []
 
 
+def test_one_day_of_gym_talk_is_not_a_habit(store):
+    for text in ["Pytest is heading to the gym", "Pytest is at the gym", "Pytest got back from the gym"]:
+        did(store, text, "status", 0)
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=1), writer=fake_writer(calls), prune=False)
+    assert calls == []
+
+
+def test_a_memory_counts_for_each_activity(store):
+    for day in range(3):
+        did(store, f"Pytest did the gym and then yoga, session {day}", "event", day, about=("gym", "yoga"))
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer(calls), prune=False)
+    assert len(calls) == 2, calls
+
+
+def test_wording_does_not_matter(store):
+    """Regression (gemini-3.8-flash run): these three sentences were too unlike each other for
+    bge-small's similarity cut, so no habit formed. Linked to the gym, they count."""
+    did(store, "Pytest is heading to the gym.", "status", 0)
+    did(store, "Pytest plans to go to the gym after work and then have dinner", "plan", 3,
+        due_on=(D1 + dt.timedelta(days=3)).isoformat())
+    did(store, "Pytest went to the gym before work to keep up a workout streak", "event", 5,
+        occurred_on=(D1 + dt.timedelta(days=5)).isoformat())
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=6), writer=fake_writer(calls), prune=False)
+    assert len(calls) == 1 and len(calls[0]) == 3, calls
+
+
+def test_unlinked_memories_form_no_habit(store):
+    for day in range(3):
+        store.apply(Extraction(memories=[mem("Pytest is at the gym", "status", 2)]), today=D1 + dt.timedelta(days=day))
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer(calls), prune=False)
+    assert calls == []
+
+
+def test_a_lapsed_plan_is_no_evidence(store):
+    did(store, "Pytest is at the gym", "status", 0)
+    did(store, "Pytest plans to go to the gym", "plan", 1, due_on=(D1 + dt.timedelta(days=1)).isoformat())
+    did(store, "Pytest is heading to the gym", "status", 2)
+    store._q("MATCH (m:Memory {user: $user, kind: 'plan'}) SET m.status = 'lapsed'")
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer(calls), prune=False)
+    assert calls == []
+
+
+def test_private_occurrences_dont_form_a_pattern(store):
+    did(store, "Pytest is at the gym", "status", 0)
+    did(store, "Pytest is heading to the gym", "status", 1, private=True)
+    did(store, "Pytest went to the gym", "event", 2)
+    calls = []
+    store.consolidate(D1 + dt.timedelta(days=3), writer=fake_writer(calls), prune=False)
+    assert calls == []
+
+
 def test_writer_can_decline(store):
     for i in range(3):
-        store.apply(Extraction(memories=[mem("Pytest is at the gym", "status", 2)]), today=D1 + dt.timedelta(days=2 * i))
+        did(store, "Pytest is at the gym", "status", 2 * i)
     assert store.consolidate(D1 + dt.timedelta(days=6), writer=lambda u, t, d: None, prune=False) == []
 
 
@@ -234,7 +280,7 @@ def test_prune_deletes_only_dormant_trivia(store):
 def test_consolidated_details_are_pruned_once_dormant(store):
     for i, text in enumerate(["Pytest is at the gym", "Pytest went to the gym after work",
                               "Pytest is heading to the gym for leg day"]):
-        store.apply(Extraction(memories=[mem(text, "status", 2)]), today=D1 + dt.timedelta(days=i))
+        did(store, text, "status", i)
     log = store.consolidate(D1 + dt.timedelta(days=10), writer=fake_writer([]))
     assert "pruned 3 dormant status/feeling memories" in log
     [p] = store._q("MATCH (p:Memory {user:$user}) WHERE p.evidence IS NOT NULL RETURN p.evidence AS n")

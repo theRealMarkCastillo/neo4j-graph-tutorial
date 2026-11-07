@@ -70,11 +70,6 @@ def test_vectors_are_unit_length_and_cached(fake_remote):
     assert all(abs(np.linalg.norm(v) - 1) < 1e-6 for v in a)
 
 
-def test_clustering_uses_its_own_instruction(fake_remote):
-    embeddings.embed_for_clustering(["Riley is at the gym"])
-    assert fake_remote[0][0].startswith("Instruct: Identify the activity")
-
-
 # Pairs a model is KNOWN to get wrong, measured and accepted (Lesson 19). Qwen's name scores
 # overlap (yes 0.76-0.97, no 0.63-0.85): no single cut gets every pair, and 0.84 keeps
 # different people apart at the cost of a few nicknames, which the extractor usually lists

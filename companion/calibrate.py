@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from companion.embeddings import PROFILE, embed, embed_for_clustering
+from companion.embeddings import PROFILE, embed
 
 YES, NO = True, False
 
@@ -69,17 +69,6 @@ CHECKS = [
         (NO, "Seattle", "Boston"), (NO, "Sam", "Jordan"), (NO, "Maya", "Mia"),
         (NO, "Biscuit", "Pepper"), (NO, "Leo", "Theo"), (NO, "Ohio", "Iowa"),
     ]),
-    ("pattern", "cosine", "Are these two memories the same habit?", "cluster", [
-        (YES, "Riley is heading to the gym", "Riley just got back from the gym."),
-        (YES, "Riley is at the gym before work.", "Riley is going to the gym after work and then having dinner"),
-        (YES, "Riley's legs feel exhausted after a gym session.", "Riley is heading to the gym"),
-        (YES, "Pytest is at the gym", "Pytest is heading to the gym for leg day"),
-        (YES, "Alex went for a run this morning", "Alex is out running"),
-        (NO, "Riley is heading to the gym", "Riley went rock climbing"),
-        (NO, "Riley is at the gym before work.", "Riley went hiking with friends"),
-        (NO, "Pytest is at the gym", "Pytest had pizza for dinner"),
-        (NO, "Alex went for a run this morning", "Alex went to a yoga class"),
-    ]),
     ("sensitive_floor", "score", "Is the message about this sensitive memory? (yes: recall it)", "query", [
         (YES, "my meds aren't helping", "Alex has ADHD and takes medication for it"),
         (YES, "I'm stressed about money this month", "Alex is in credit card debt"),
@@ -104,12 +93,8 @@ CHECKS = [
 
 
 def similarity(a: str, b: str, side: str, scale: str) -> float:
-    """side "query": a message against stored text; "cluster": two memories grouped into
-    habits (both with the model's clustering instruction); "text": two stored texts."""
-    if side == "cluster":
-        va, vb = map(np.array, embed_for_clustering([a, b]))
-    else:
-        va, vb = np.array(embed([a], query=side == "query")[0]), np.array(embed([b])[0])
+    """side "query": a message against stored text; "text": two stored texts."""
+    va, vb = np.array(embed([a], query=side == "query")[0]), np.array(embed([b])[0])
     cos = float(va @ vb)
     return (1 + cos) / 2 if scale == "score" else cos
 

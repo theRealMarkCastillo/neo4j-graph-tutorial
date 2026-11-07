@@ -40,12 +40,10 @@ class Profile:
     forgotten: float          # cosine: this close to a /forget tombstone is not stored again
     entity_match: float       # score: an entity this close (same kind) may be the same one...
     name_match: float         # cosine: ...if their NAMES are this close too ("Mom" ~ "my mother")
-    pattern: float            # cosine: every pair in a habit cluster at least this close
     sensitive_floor: float    # score: a sensitive memory needs at least this to be recalled
     sensitive_margin: float   # score: ...and to be within this of the best match
     entity_hop: float         # score: an entity this close to the message is looked up
     query_instruction: str = ""    # put before a query (not before stored text)
-    cluster_instruction: str = ""  # put before memories grouped into habits (Lesson 13)
     # score: below this a vector match is "loosely related" (Lesson 18). None: the model can't
     # tell (bge-small's scores overlap), so a cross-encoder decides instead.
     weak_below: float | None = None
@@ -70,18 +68,15 @@ DEFAULT_MODEL = config.LOCAL_EMBED_MODEL
 PROFILES = {p.model: p for p in [
     # Lessons 9-13 measured these (see the comments next to each constant in store.py).
     Profile("BAAI/bge-small-en-v1.5", dims=384, duplicate=0.975, forgotten=0.90, entity_match=0.93,
-            name_match=0.80, pattern=0.82, sensitive_floor=0.72, sensitive_margin=0.01, entity_hop=0.85),
+            name_match=0.80, sensitive_floor=0.72, sensitive_margin=0.01, entity_hop=0.85),
     # Lesson 19: measured with `python -m companion.calibrate` (results in the lesson).
     # Its scores spread wider than bge-small's: unrelated pairs sit lower (sensitive/hop "no"
     # 0.57-0.62 vs bge's 0.68-0.74), so the floors drop, and a message that only MEANS an
     # entity ("how is my kid doing?" -> Logan) now clears the hop (0.65-0.73 vs no <= 0.59).
     Profile("Qwen/Qwen3-Embedding-8B", dims=4096, duplicate=0.966, forgotten=0.89, entity_match=0.94,
-            name_match=0.84, pattern=0.665, sensitive_floor=0.655, sensitive_margin=0.015, entity_hop=0.62,
+            name_match=0.84, sensitive_floor=0.655, sensitive_margin=0.015, entity_hop=0.62,
             query_instruction="Instruct: Given a message from a user, retrieve memories about the "
                               "user's life that it relates to\nQuery: ",
-            # without it, "heading to the gym" vs "went rock climbing" (0.77) outscored two
-            # gym sentences (0.73): complete-linkage clustering couldn't find the habit
-            cluster_instruction="Instruct: Identify the activity or habit described\nQuery: ",
             # one cut on the best match got 36 of 37 test messages right (raw cosine 0.312)
             weak_below=0.656),
 ]}
@@ -134,12 +129,6 @@ def embed(texts: list[str], query: bool = False) -> list[list[float]]:
     """Unit-length vectors (so a dot product is the cosine). `query=True`: the text is a message
     searched against stored memories/entities, and gets the model's query instruction."""
     return _embed(texts, PROFILE.query_instruction if query else "")
-
-
-def embed_for_clustering(texts: list[str]) -> list[list[float]]:
-    """Vectors for grouping memories into habits. Not stored: consolidation embeds again
-    when the model has a clustering instruction, else it can use the stored vectors."""
-    return _embed(texts, PROFILE.cluster_instruction)
 
 
 def _embed(texts: list[str], instruction: str) -> list[list[float]]:

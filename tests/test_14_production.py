@@ -110,7 +110,8 @@ def test_a_pattern_links_its_evidence_even_when_it_reinforces_an_older_one(store
                                                kind="preference", importance=6)]), today=D1)
     for i, text in enumerate(["Pytest is at the gym", "Pytest went to the gym after work",
                               "Pytest is heading to the gym for leg day"]):
-        store.apply(Extraction(memories=[MemoryOut(text=text, kind="status", importance=2)]),
+        store.apply(Extraction(entities=[EntityOut(name="gym", kind="activity")],  # habits are per activity
+                               memories=[MemoryOut(text=text, kind="status", importance=2, about=["gym"])]),
                     today=D1 + dt.timedelta(days=i + 1))
     writer = lambda *_: MemoryOut(text="Pytest goes to the gym regularly!", kind="preference", importance=6)
     log = store.consolidate(D1 + dt.timedelta(days=4), writer=writer, prune=False)

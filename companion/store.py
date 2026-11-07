@@ -17,8 +17,8 @@ import numpy as np
 from config import COMPANION_NAME, RERANK_MODEL
 from observability import traced
 from companion import clock, decay, ontology
-from companion.embeddings import PROFILE, embed, embed_for_clustering  # Lesson 19: local or remote, with its thresholds
-from companion.models import Extraction
+from companion.embeddings import PROFILE, embed  # Lesson 19: local or remote, with its thresholds
+from companion.models import Extraction, RelationOut
 from companion.schema import ensure_schema
 
 _reranker = None
@@ -54,36 +54,6 @@ def _similar_names(name: str, known: list[str]) -> bool:
     return _name_similarity([name], known) >= NAME_MATCH_MIN
 
 
-def _clusters(rows: list[dict], min_sim: float, min_size: int) -> list[list[dict]]:
-    """Complete-linkage clustering: a group's members are ALL at least `min_sim` similar to
-    each other, so "gym" can't chain via "climbing" to "hiking".
-
-    Groups are found largest first: from each memory as a seed, add the others most similar
-    to it that fit with every member so far; keep the biggest group, remove it, repeat.
-    (Putting each memory into the first group it fits, in time order, lets an early pair lock
-    the rest out: tests/test_13_time.py has the real case.) O(n^3), fine for a few hundred."""
-    if not rows:
-        return []
-    vecs = np.asarray([r["vec"] for r in rows], dtype=float)
-    sim = vecs @ vecs.T
-    left = set(range(len(rows)))
-    found: list[list[dict]] = []
-    while len(left) >= min_size:
-        best: list[int] = []
-        for seed in sorted(left):
-            group = [seed]
-            for j in sorted(left - {seed}, key=lambda j: -sim[seed, j]):
-                if all(sim[j, k] >= min_sim for k in group):
-                    group.append(j)
-            if len(group) > len(best):
-                best = group
-        if len(best) < min_size:
-            break
-        found.append([rows[i] for i in sorted(best)])
-        left -= set(best)
-    return found
-
-
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:6]}"
 
@@ -106,10 +76,7 @@ RECENT_HOURS = 24
 # Consolidation (Lesson 13)
 LAPSE_AFTER_DAYS = 14        # an open plan this far past due stops being followed up
 PATTERN_WINDOW_DAYS = 60     # look for repeats among memories this recent
-PATTERN_SIMILARITY = PROFILE.pattern  # EVERY pair in a cluster at least this similar. Measured: gym sentences
-                             # 0.83-0.91; rock climbing 0.78-0.82 to them, so it stays out. The
-                             # writer LLM can still decline a cluster that isn't a habit.
-PATTERN_MIN = 3              # this many similar memories make a pattern
+PATTERN_MIN = 3              # memories ABOUT one activity on this many distinct days make a habit
 PRUNE_MAX_IMPORTANCE = 3     # only trivia is ever deleted
 # Entity match threshold when names differ ("Mom" vs "my mother").
 ENTITY_MATCH_SCORE = PROFILE.entity_match
@@ -1163,23 +1130,11 @@ class MemoryStore:
             """, days=LAPSE_AFTER_DAYS)]
 
         if writer is not None:
-            rows = q(
-                """
-                MATCH (m:Memory {user: $user}) WHERE m.invalidated_at IS NULL AND m.consolidated_at IS NULL
-                  AND m.kind IN ['event', 'status', 'feeling'] AND NOT coalesce(m.sensitive, false)
-                  AND NOT coalesce(m.private, false)  // a shared pattern must not be built from private memories
-                  AND m.created_at > $now - duration({days: $days})
-                  AND m[$vprop] IS NOT NULL  // not yet re-embedded for this model (Lesson 19)
-                RETURN m.id AS id, m.text AS text, m[$vprop] AS vec ORDER BY m.created_at
-                """, days=PATTERN_WINDOW_DAYS)
-            if PROFILE.cluster_instruction:  # this model groups better with an instruction (Lesson 19)
-                for r, v in zip(rows, embed_for_clustering([r["text"] for r in rows])):
-                    r["vec"] = v
-            for group in _clusters(rows, PATTERN_SIMILARITY, PATTERN_MIN):
-                pattern = writer(self.user_name, [r["text"] for r in group], today)
+            for h in self._habits(now):
+                pattern = writer(self.user_name, [r["text"] for r in h["members"]], today)
                 if pattern is None:
                     continue
-                log += self._write(lambda: self._store_pattern(pattern, group, today, now))
+                log += self._write(lambda: self._store_pattern(pattern, h, today, now))
         if prune:
             log += self._prune(now)
         log += self._drop_orphans()
@@ -1199,11 +1154,38 @@ class MemoryStore:
         )
         return [f"dropped {len(gone)} unconnected entities: {', '.join(sorted(g['name'] for g in gone))}"] if gone else []
 
-    def _store_pattern(self, pattern, group: list[dict], today: dt.date, now: dt.datetime) -> list[str]:
-        """The pattern and its SUMMARIZES links commit together (the LLM call happened before
-        the transaction, so the user's write lock isn't held while waiting on it)."""
-        log = [f"pattern from {len(group)} memories: {line}"
-               for line in self.apply(Extraction(memories=[pattern]), today=today)]
+    def _habits(self, now: dt.datetime) -> list[dict]:
+        """2. habits  an activity with memories ABOUT it on PATTERN_MIN+ distinct days in the
+        window. Read from the graph, not from how the sentences are worded: the vector
+        clustering this replaced broke when a new extraction model wrote longer, dated
+        sentences (structure-over-prose spec). A day is the memory's own date field, else
+        the day it was said; several mentions on one day count once. Occurrences only
+        (event, status, plan, feeling): facts and preferences are what a habit becomes."""
+        return self._q(
+            """
+            MATCH (a:Entity {user: $user, kind: 'activity'})<-[:ABOUT]-(m:Memory {user: $user})
+            WHERE m.invalidated_at IS NULL AND m.consolidated_at IS NULL
+              AND m.kind IN ['event', 'status', 'plan', 'feeling']
+              AND coalesce(m.status, '') <> 'lapsed'  // a plan that never happened is no evidence
+              AND NOT coalesce(m.sensitive, false)
+              AND NOT coalesce(m.private, false)  // a shared pattern must not be built from private memories
+              AND m.created_at > $now - duration({days: $days})
+            WITH a, m, coalesce(m.occurred_on, m.due_on, date(m.valid_until), date(m.created_at)) AS day
+            ORDER BY m.created_at
+            WITH a, collect(m {.id, .text}) AS members, count(DISTINCT day) AS days
+            WHERE days >= $min
+            RETURN a.id AS activity, a.name AS name, members
+            """, now=now, days=PATTERN_WINDOW_DAYS, min=PATTERN_MIN)
+
+    def _store_pattern(self, pattern, habit: dict, today: dt.date, now: dt.datetime) -> list[str]:
+        """The pattern, its SUMMARIZES links and user -practices-> activity commit together
+        (the LLM call happened before the transaction, so the user's write lock isn't held
+        while waiting on it). The pattern is ABOUT the activity, so the habit is in the graph."""
+        group = habit["members"]
+        pattern = pattern.model_copy(update={"about": list(dict.fromkeys([*(pattern.about or ["user"]), habit["activity"]]))})
+        found = Extraction(memories=[pattern],
+                           relations=[RelationOut(source="user", target=habit["activity"], type="practices")])
+        log = [f"pattern from {len(group)} memories: {line}" for line in self.apply(found, today=today)]
         # By id, not by text: if apply() reinforced an existing pattern ("goes to the gym
         # regularly" vs "works out at the gym often"), the texts differ.
         self._q(
