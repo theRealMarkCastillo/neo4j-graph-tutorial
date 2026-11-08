@@ -5,15 +5,17 @@
 
 The round trip:
 1. Chat with tracing on (MLFLOW_TRACKING_URI, see observability.py) and spot a wrong memory.
-2. In the MLflow UI, open that turn's `remember` trace and copy its id (tr-...).
+2. In the MLflow UI, open that turn's `remember` trace (or the trace holding the end-of-episode
+   `extract_episode` span) and copy its id (tr-...).
 3. Run this. It writes a pytest case that replays the extraction with the exact inputs the
    trace recorded (message, reply, candidates, known entities, earlier turns, date), and shows
    what the model returned in a comment.
 4. Replace the TODO with a check for the rule that was broken. The case should FAIL now.
 5. Fix the prompt, then run `pytest -m llm` again and compare the runs in MLflow.
 
-The case calls extract_memories() directly, like the other cases in
-tests/test_11_extraction_evals.py: no database, so it's cheap to run many times.
+The case calls extract_memories() (a turn) or extract_episode() (the end-of-episode pass over
+the whole transcript) directly, like the other cases in tests/test_11_extraction_evals.py: no
+database, so it's cheap to run many times.
 """
 from __future__ import annotations
 
@@ -45,15 +47,51 @@ def _literal(value, indent: int) -> str:
     return textwrap.indent(text, " " * indent).lstrip()
 
 
-def case_from_span(trace_id: str, inputs: dict, outputs, name: str | None = None) -> str:
+def _slug(text: str) -> str:
+    return "_".join(re.findall(r"[a-z0-9]+", text.lower())[:6]) or "case"
+
+
+def _memories_call(inputs: dict) -> tuple[str, list[str], str]:
+    """extract_memories(): one turn, with the earlier turns it was shown."""
     msg = inputs["user_msg"]
-    slug = name or "_".join(re.findall(r"[a-z0-9]+", msg.lower())[:6]) or "case"
     earlier = [tuple(pair) for pair in inputs.get("earlier") or []]
     args = [repr(inputs["user"]), repr(msg), repr(inputs.get("assistant_msg", ""))]
     for key, value in (("candidates", inputs.get("candidates") or []),
                        ("entities", inputs.get("entities") or []), ("earlier", earlier)):
         if value:
             args.append(f"{key}={_literal(value, 12)}")
+    return "extract_memories", args, msg
+
+
+def _episode_call(inputs: dict) -> tuple[str, list[str], str]:
+    """extract_episode(): the end-of-episode pass over the whole transcript."""
+    transcript = inputs["transcript"]
+    args = [repr(inputs["user"]), _literal(transcript, 12),
+            _literal(inputs.get("candidates") or [], 12), _literal(inputs.get("entities") or [], 12)]
+    if inputs.get("refresh"):
+        args.append("refresh=True")
+    # Name it after the first user line, not the "User:" prefix.
+    first = transcript.split("\n", 1)[0].split(":", 1)[-1]
+    return "extract_episode", args, "episode " + first
+
+
+SPAN_CALLS = {"extract_memories": _memories_call, "extract_episode": _episode_call}
+
+
+def _unique(slug: str, taken: set[str]) -> str:
+    """`slug`, numbered if a test of that name exists: a second `def` would silently replace it."""
+    n, candidate = 1, slug
+    while candidate in taken:
+        n += 1
+        candidate = f"{slug}_{n}"
+    taken.add(candidate)
+    return candidate
+
+
+def case_from_span(trace_id: str, span_name: str, inputs: dict, outputs,
+                   name: str | None = None, taken: set[str] | None = None) -> str:
+    func, args, label = SPAN_CALLS[span_name](inputs)
+    slug = _unique(name or _slug(label), taken if taken is not None else set())
     if inputs.get("today"):
         args.append(f"today=dt.date.fromisoformat({inputs['today']!r})")
     if inputs.get("companion"):
@@ -63,9 +101,9 @@ def case_from_span(trace_id: str, inputs: dict, outputs, name: str | None = None
     return f'''
 
 def test_from_trace_{slug}(llm_ready):
-    """From MLflow trace {trace_id}. TODO: the rule this case pins, in one line."""
+    """From MLflow trace {trace_id} ({span_name}). TODO: the rule this case pins, in one line."""
     def check():
-        ex = extract_memories(
+        ex = {func}(
             {call},
         )
         dump = ex.model_dump_json(exclude_defaults=True)
@@ -92,12 +130,15 @@ def main() -> None:
     trace = mlflow.get_trace(args.trace_id)
     if trace is None:
         sys.exit(f"No trace {args.trace_id} on {mlflow.get_tracking_uri()}")
-    spans = [s for s in trace.data.spans if s.name == "extract_memories"]
+    spans = [s for s in trace.data.spans if s.name in SPAN_CALLS]
     if not spans:
-        sys.exit("That trace has no extract_memories span. With background extraction it's in "
-                 "the turn's separate `remember` trace (same session): copy that trace's id. "
-                 "(Small talk skips extraction, so its turns have none.)")
-    cases = "".join(case_from_span(args.trace_id, s.inputs, s.outputs, args.name) for s in spans)
+        sys.exit("That trace has no extract_memories or extract_episode span. With background "
+                 "extraction it's in the turn's separate `remember` trace (same session): copy "
+                 "that trace's id. (Small talk skips extraction, so its turns have none.)")
+    # Test names already in the eval file, so a new case never shadows one.
+    taken = set(re.findall(r"^def test_from_trace_(\w+)\(", EVAL_FILE.read_text(), re.M))
+    cases = "".join(case_from_span(args.trace_id, s.name, s.inputs, s.outputs, args.name, taken)
+                    for s in spans)
     if args.append:
         with EVAL_FILE.open("a") as f:
             f.write(cases)

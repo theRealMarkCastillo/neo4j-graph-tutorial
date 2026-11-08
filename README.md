@@ -250,7 +250,8 @@ uv run --group observability python -m companion.trace_to_case tr-... --append  
 
 It writes a case for [`tests/test_11_extraction_evals.py`](tests/test_11_extraction_evals.py)
 that replays the extraction with the exact inputs the trace recorded, and shows what the model
-returned in a comment. Write the check for the rule that broke (it should fail), fix the prompt,
+returned in a comment. That's one case per extraction span in the trace: `extract_memories` for a
+turn, and `extract_episode` for the end-of-episode pass over the whole transcript. Write the check for the rule that broke (it should fail), fix the prompt,
 rerun `pytest -m llm`, and compare the two runs in MLflow.
 
 ### Release check: on the model you ship

@@ -113,7 +113,7 @@ def start_eval_run(kind: str, **params) -> None:
     for f in PROMPT_FILES:
         prompts.update((root / f).read_bytes())
     git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, text=True).stdout.strip()  # noqa: E731
-    sha, dirty = git("rev-parse", "--short", "HEAD"), bool(git("status", "--porcelain"))
+    sha, dirty = git("rev-parse", "--short", "HEAD"), bool(git("status", "--porcelain", "--untracked-files=no"))
     _mlflow.start_run(run_name=f"{kind} {sha}{'+dirty' if dirty else ''}", tags={"eval_kind": kind})
     _mlflow.log_params({
         "llm_model": config.LLM_MODEL, "extraction_model": config.LLM_EXTRACTION_MODEL,
