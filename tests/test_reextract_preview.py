@@ -374,3 +374,91 @@ def test_read_view_is_closed_after_context_exit(store):
         assert view._q("RETURN 1 AS value") == [{"value": 1}]
     with pytest.raises(PermissionError, match="open read_view"):
         view._q("RETURN 1 AS value")
+
+
+def test_preview_exclusivity_only_ends_opposite_link_to_same_target(store):
+    from companion.preview import preview_extraction
+    store.apply(Extraction(entities=[EntityOut(name="Coffee", kind="thing", new=True),
+                                     EntityOut(name="Tea", kind="thing", new=True)],
+                           relations=[RelationOut(source="user", target="Coffee", type="dislikes"),
+                                      RelationOut(source="user", target="Tea", type="dislikes")]), today=DAY)
+    ex = Extraction(relations=[RelationOut(source="user", target="Coffee", type="likes")])
+    with MemoryStore.read_view(store.driver, store.user_name) as view:
+        items = preview_extraction(view, ex, "", DAY)
+    endings = [i["text"] for i in items if i["category"] == "relation" and i["action"] == "end"]
+    assert endings == ["user -dislikes-> Coffee"]
+    store.apply(ex, today=DAY)
+    assert store._q("MATCH (:User {id:$user})-[r:RELATED {type:'dislikes'}]->(e) WHERE r.until IS NULL RETURN e.name AS name") == [{"name": "Tea"}]
+
+
+@pytest.mark.parametrize("before,incoming,after,action", [
+    (False, True, False, "existing"), (True, False, False, "update"),
+    (True, True, True, "existing"), (False, False, False, "existing"),
+])
+def test_preview_relation_privacy_matches_effective_apply_rule(store, before, incoming, after, action):
+    from companion.preview import preview_extraction
+    def extraction(private):
+        return Extraction(entities=[EntityOut(name="Coffee", kind="thing")],
+                          relations=[RelationOut(source="user", target="Coffee", type="likes")],
+                          memories=[MemoryOut(text="Pytest likes coffee", kind="preference", importance=5,
+                                              about=["Coffee"], private=private)])
+    store.apply(extraction(before), today=DAY)
+    ex = extraction(incoming)
+    with MemoryStore.read_view(store.driver, store.user_name) as view:
+        item = next(i for i in preview_extraction(view, ex, "", DAY) if i["category"] == "relation")
+    assert item["details"]["private"] is after
+    assert item["details"]["incoming_private"] is incoming
+    assert item["details"]["private_before"] is before
+    assert item["details"]["private_after"] is after
+    assert item["action"] == action
+    if before != after:
+        assert "visibility" in item["reason"] and "shared" in item["reason"]
+    store.apply(ex, today=DAY)
+    [link] = store._q("MATCH (:User {id:$user})-[r:RELATED {type:'likes'}]->() RETURN r.private AS private")
+    assert link["private"] is after
+
+
+def test_preview_marks_relations_to_merging_entities_unresolved(store):
+    from companion.preview import preview_extraction
+    store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person", new=True),
+                                     EntityOut(name="my sister", kind="person", new=True)]), today=DAY)
+    rows = store._q("MATCH (e:Entity {user:$user}) WHERE e.name IN ['Maya', 'my sister'] RETURN e.name AS name, e.id AS id")
+    ids = {r["name"]: r["id"] for r in rows}
+    ex = Extraction(entities=[EntityOut(name="Maya", kind="person", ref=ids["Maya"], aliases=["my sister"])],
+                    relations=[RelationOut(source="user", target=ids["my sister"], type="friend"),
+                               RelationOut(source="user", target=ids["Maya"], type="sister")])
+    with MemoryStore.read_view(store.driver, store.user_name) as view:
+        relations = [i for i in preview_extraction(view, ex, "", DAY) if i["category"] == "relation"]
+    assert len(relations) == 2
+    assert all(i["action"] == "unresolved" and "merge" in i["reason"] for i in relations)
+
+
+def test_retirement_preview_discloses_unsimulated_downstream_effects():
+    from companion.preview import format_preview
+    item = {"category": "retirement", "action": "end", "text": "old fact", "reason": "requested"}
+    assert "downstream relation" in " ".join(format_preview([item])).lower()
+
+
+@pytest.mark.parametrize("field", ["invalidate", "completed_plans"])
+def test_explicit_action_ids_do_not_disclose_other_personas_private_memory(store, field):
+    from companion.preview import preview_extraction
+    import json
+    other = MemoryStore(store.driver, store.user_name, agent="Other")
+    other.apply(Extraction(memories=[MemoryOut(text="Private hidden cello secret", kind="plan", importance=6,
+                                              private=True, due_on="2026-11-09")]), today=DAY)
+    [memory] = other.memories(today=DAY)
+    ex = Extraction(**{field: [memory["id"]]})
+    with MemoryStore.read_view(store.driver, store.user_name) as view:
+        items = preview_extraction(view, ex, "", DAY)
+    assert "Private hidden cello secret" not in json.dumps(items, default=str)
+    assert any(i["action"] == "unresolved" and "visible" in i["reason"] for i in items)
+
+
+def test_preview_items_are_json_serializable_without_custom_encoder(store):
+    from companion.preview import preview_extraction
+    import json
+    store.apply(Extraction(entities=[EntityOut(name="Maya", kind="person")],
+                           relations=[RelationOut(source="user", target="Maya", type="sister")]), today=DAY)
+    with MemoryStore.read_view(store.driver, store.user_name) as view:
+        items = preview_extraction(view, Extraction(relations=[RelationOut(source="user", target="Maya", type="sister")]), "", DAY)
+    assert json.loads(json.dumps(items)) == items

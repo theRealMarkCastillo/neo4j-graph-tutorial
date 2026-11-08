@@ -11,7 +11,7 @@ import json
 from companion import clock, ontology
 from companion.embeddings import embed
 from companion.models import Extraction
-from companion.store import MemoryStore, _to_date, is_role_name, one_person_roles, temporary_relation
+from companion.store import MemoryStore, _to_date, is_role_name, one_person_roles, temporary_relation, visible
 
 
 def _item(category, action, text, reason, *, id=None, score=None, details=None):
@@ -30,6 +30,7 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
     ex, now = extraction, clock.now_for(today)
     items, known, entity_info = [], {}, {}
     pending_merges = []
+    merge_affected = set()
 
     def entity(eid):
         if eid not in entity_info:
@@ -70,6 +71,7 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
             if merges:
                 changed["merge_entities"] = merges
                 pending_merges.extend(merges)
+                merge_affected.update([eid, *(m["id"] for m in merges)])
             details.update(changes=changed, before={k: cur.get(k) for k in ("name", "kind", "summary", "aliases")})
             items.append(_item("entity", "update" if changed else "existing", ent.name,
                                "matched current entity" + ("; reconciliation proposed" if changed else ""),
@@ -96,7 +98,8 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
     for rel, a, b, canon, how in resolved:
         source, target = (rel.target, rel.source) if how == "flipped" else (rel.source, rel.target)
         text = f"{source} -{canon}-> {target}"
-        details = {**_fields(rel), "canonical_type": canon, "flipped": how == "flipped"}
+        details = {**_fields(rel), "canonical_type": canon, "flipped": how == "flipped",
+                   "source_match": display(a), "target_match": display(b)}
         if not a or not b:
             items.append(_item("relation", "unresolved", text, "unresolved source or target", details=details))
             continue
@@ -119,7 +122,11 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         edges = store._q("MATCH (:Entity {id:$a, user:$user})-[r:RELATED]->(:Entity {id:$b}) "
                          "WHERE r.until IS NULL AND r.type IN $types RETURN properties(r) AS r", a=a, b=b, types=types)
         details["existing_links"] = [e["r"] for e in edges]
-        details["private"] = rel.target.lower() in private_names and rel.target.lower() not in shared_names
+        incoming_private = rel.target.lower() in private_names and rel.target.lower() not in shared_names
+        before_private = all(bool(e["r"].get("private")) for e in edges) if edges else None
+        after_private = all(incoming_private and e["r"].get("private", True) for e in edges) if edges else incoming_private
+        details.update(incoming_private=incoming_private, private_before=before_private,
+                       private_after=after_private, private=after_private)
         if rel.ended:
             items.append(_item("relation", "end" if edges else "skip", text,
                                "end current links" if edges else "no current link to end", details=details))
@@ -133,36 +140,62 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
             if roles:
                 details["merge_entities"] = roles
                 pending_merges.extend(roles)
+                merge_affected.update([display(b), *(r["id"] for r in roles)])
         reason = "active link already exists; would refresh link metadata" if edges else "proposed link"
+        action = "existing" if edges else "new"
+        if edges and before_private != after_private:
+            action = "update"
+            reason = (f"would change visibility from {'private' if before_private else 'shared'} "
+                      f"to {'private' if after_private else 'shared'}")
+        elif edges and incoming_private and not after_private:
+            reason = "active link stays shared; incoming private intent cannot make a shared link private"
         if how == "new":
             reason += "; unknown type would be proposed to ontology"
-        items.append(_item("relation", "existing" if edges else "new", text, reason, details=details))
+        items.append(_item("relation", action, text, reason, details=details))
         # The same cardinality and exclusive-type rules used by apply end other links.
         replacement_types = sorted(ontology.lineage(canon) | {canon}) if ontology.rule(canon, "cardinality") == "one" else []
         exclusive = ontology.rule(canon, "exclusive") or []
         for old in store._q("MATCH (:Entity {id:$a, user:$user})-[r:RELATED]->(e:Entity) WHERE r.until IS NULL "
-                            "AND (r.type IN $exclusive OR (r.type IN $types AND (e.id <> $b OR r.type <> $type))) "
+                            "AND ((e.id = $b AND r.type IN $exclusive) OR (r.type IN $types AND (e.id <> $b OR r.type <> $type))) "
                             "RETURN e.id AS id, e.name AS name, r.type AS type", a=a, b=b, type=canon,
                             types=replacement_types, exclusive=exclusive):
             items.append(_item("relation", "end", f"{rel.source} -{old['type']}-> {old['name']}",
-                               "cardinality/exclusivity replacement", id=old["id"]))
+                               "cardinality/exclusivity replacement", id=old["id"],
+                               details={"source_match": display(a), "target_match": old["id"]}))
+
+    # Apply can delete/transfer these nodes before resolving or writing later relations.
+    # Keep the current-graph observation as evidence, but do not promise that link.
+    for item in items:
+        if (item["category"] == "relation" and item["action"] in {"existing", "new", "update", "end"}
+                and {item["details"].get("source_match"), item["details"].get("target_match")} & merge_affected):
+            item["details"]["current_graph_match"] = {"action": item["action"], "reason": item["reason"]}
+            item["action"] = "unresolved"
+            item["reason"] = "depends on proposed entity merge; transferred/deleted links are not simulated"
 
     def memory(mid):
-        rows = store._q("MATCH (m:Memory {user:$user, id:$id}) RETURN properties(m) AS m", id=mid)
-        return rows[0]["m"] if rows else None
+        rows = store._q("MATCH (m:Memory {user:$user, id:$id}) RETURN CASE WHEN " + visible("m") +
+                        " THEN properties(m) ELSE null END AS m", id=mid)
+        if not rows:
+            return None
+        return rows[0]["m"] or {"text": mid, "_hidden": True}
 
     pending_retirements = set(ex.invalidate)
     for mid in ex.invalidate:
         cur = memory(mid)
-        items.append(_item("retirement", "end" if cur and cur.get("invalidated_at") is None else "skip",
-                           cur["text"] if cur else mid, "requested invalidation" if cur else "unknown memory id", id=mid))
+        hidden = cur and cur.get("_hidden")
+        items.append(_item("retirement", "unresolved" if hidden else
+                           "end" if cur and cur.get("invalidated_at") is None else "skip",
+                           cur["text"] if cur else mid, "memory id is not visible to this persona" if hidden else
+                           "requested invalidation" if cur else "unknown memory id", id=mid))
     for mid in ex.completed_plans:
         cur = memory(mid)
-        found = cur and cur.get("kind") == "plan" and cur.get("status") == "open"
+        hidden = cur and cur.get("_hidden")
+        found = cur and not hidden and cur.get("kind") == "plan" and cur.get("status") == "open"
         restated = found and (any(mid in m.supersedes for m in ex.memories) or any(
             m.kind == "plan" and _to_date(m.due_on) is not None and _to_date(m.due_on) == cur.get("due_on")
             and m.text.strip().lower() == cur["text"].strip().lower() for m in ex.memories))
-        items.append(_item("completion", "end" if found and not restated else "skip", cur["text"] if cur else mid,
+        items.append(_item("completion", "unresolved" if hidden else "end" if found and not restated else "skip",
+                           cur["text"] if cur else mid, "memory id is not visible to this persona" if hidden else
                            "same extraction re-states plan; keep open" if restated else
                            "would mark plan done" if found else "no open plan with this id", id=mid))
 
@@ -197,19 +230,24 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
                            score=decision.get("score"), details=details))
         for mid in mem.supersedes:
             cur = memory(mid)
-            effective = action in ("new", "reinforce") and mid != decision.get("id") and cur and cur.get("invalidated_at") is None
-            items.append(_item("retirement", "end" if effective else "unresolved" if action == "unresolved" else "skip",
+            hidden = cur and cur.get("_hidden")
+            effective = (action in ("new", "reinforce") and mid != decision.get("id") and cur
+                         and not hidden and cur.get("invalidated_at") is None)
+            items.append(_item("retirement", "unresolved" if hidden else "end" if effective else
+                               "unresolved" if action == "unresolved" else "skip",
                                cur["text"] if cur else mid,
+                               "memory id is not visible to this persona" if hidden else
                                "replaced by proposed memory" if effective else "no effective replacement established", id=mid))
             if effective:
                 pending_retirements.add(mid)
     for name in ex.forget_entities:
         eid = lookup(name)
         items.append(_item("forgetting", "end" if eid and eid != store.user else "skip", name,
-                           "would delete entity and matching memories, redact turns and summaries; not applied"
+                           "would delete entity, its links and matching memories, redact turns and summaries; not applied"
                            if eid and eid != store.user else "no forgettable entity resolved",
                            id=eid if eid and not eid.startswith("proposal:") else None))
-    return items
+    # Neo4j temporal properties in before/after details become ordinary JSON strings.
+    return json.loads(json.dumps(items, ensure_ascii=False, default=str))
 
 
 def format_preview(items: list[dict]) -> list[str]:
@@ -221,4 +259,6 @@ def format_preview(items: list[dict]) -> list[str]:
         lines.append(f"    reason: {item['reason']}")
         if item.get("details"):
             lines.append("    " + json.dumps(item["details"], ensure_ascii=False, default=str, sort_keys=True))
+    if any(i["category"] in {"retirement", "forgetting"} and i["action"] == "end" for i in items):
+        lines.append("  [effects:unresolved] Downstream relation/provenance effects of retirement or forgetting are not simulated.")
     return lines
