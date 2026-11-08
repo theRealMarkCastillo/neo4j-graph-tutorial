@@ -271,6 +271,12 @@ and check the right thing for each. A model's known misses are listed in
 [`tests/test_19_embeddings.py`](tests/test_19_embeddings.py) (`KNOWN_MISSES`): anything else
 failing is a regression.
 
+`companion.reextract --dry-run` gives a read-only **current-graph preview**: candidate text,
+dates, existing/new entities and links, reinforcement ids/scores, and unresolved effects.
+It does not initialize schema or update user metadata. Set up the database normally first.
+A later apply reruns extraction and can differ; proposals are not a saved execution plan.
+See [Lesson 20](lessons/20-growing-the-life-graph.md#review-a-current-graph-preview-before-applying).
+
 ## Common commands
 
 ```bash

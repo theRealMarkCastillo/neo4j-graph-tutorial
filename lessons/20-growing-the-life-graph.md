@@ -247,18 +247,43 @@ memories that are already stored correctly*, and all of Logan's memories were. T
 obeyed and returned empty lists. Re-reading needs a different job description, so
 `REFRESH_SYSTEM` says the rules changed, asks for every entity and relation the conversation
 supports *even when the fact is already a memory*, and allows re-outputting an existing memory
-with a longer `about`. The second dry run:
+with a longer `about`. The recorded preview from that version (it showed names and counts only):
 
 ```
 ep_ffeecf: entities ['Lego', 'Minecraft'], links ['e_84c8fd -likes-> Lego', 'e_84c8fd -likes-> Minecraft']
 ep_9f0e88: entities ['Samsung tablet', 'Disney+', 'Moana', 'Lego', 'Minecraft'], links [... 5 likes ...]
 ```
 
-It's safe to run twice. The write path's dedupe reinforces memories it already has, and a
-reinforced memory now also gains `ABOUT` edges to any entity its new `about` names. Each
+The write path usually reinforces memories it already has, and a reinforced memory also
+gains `ABOUT` edges to any entity its new `about` names. This is not guaranteed idempotence:
+a fresh extraction can word or link things differently, and earlier applied episodes can
+change what later episodes match. Apply can also reconcile entities and retire old facts. Each
 episode is read with its own date, so "next Friday" still means the Friday after *that*
 conversation. This is the same idea as Lesson 19's `reembed`: when a derived artifact's
 recipe changes, you need a backfill command, not just a new code path.
+
+### Review a current-graph preview before applying
+
+`--dry-run` now prints each episode's original date and persona, candidate memory text,
+kind, ABOUT references and supplied date fields. It labels entities and links as existing,
+new, or updates; memories as new, reinforcement, skipped, or unresolved, with match ids and
+scores when available. Proposed entity reconciliation, link endings, retirements, plan
+completions and forgetting remain proposals. No schema, ontology, user, vector-property or
+memory writes occur, including startup metadata updates or temporary simulated writes.
+
+Selection uses the same entity and duplicate helpers as the write path: explicit refs,
+alias/name matching, embedding cuts, date equality, visibility and the entity veto.
+A missing reference, or an earlier proposed merge/retirement that could affect a match,
+is reported as unresolved. The preview does not pretend to execute those changes in memory.
+
+Each episode is compared with the **current graph**, not the results of applying earlier
+proposals. A later apply reruns the model, so it is not an execution of an approved saved
+preview. Review changes again if the graph, extraction model, or rules have changed.
+
+The database must already be set up for the active embedding profile. Missing vector
+indexes produce an instruction to run normal setup; dry run does not create or repair them.
+An unknown user or one without episodes gets an explicit no-episodes result and is not
+created. Both dry run and apply send eligible stored conversations to the configured model.
 
 ## 7. Keeping the graph tidy
 

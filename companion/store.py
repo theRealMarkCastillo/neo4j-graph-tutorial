@@ -10,6 +10,7 @@ import datetime as dt
 import re
 import threading
 import uuid
+from contextlib import contextmanager
 from functools import partial
 
 import numpy as np
@@ -18,7 +19,7 @@ from config import COMPANION_NAME, RERANK_MODEL
 from observability import traced
 from companion import clock, decay, ontology
 from companion.embeddings import PROFILE, embed  # Lesson 19: local or remote, with its thresholds
-from companion.models import Extraction, RelationOut
+from companion.models import EntityOut, Extraction, MemoryOut, RelationOut
 from companion.schema import ensure_schema
 
 _reranker = None
@@ -188,8 +189,18 @@ def _next_occurrence(md: str, today: dt.date) -> dt.date | None:
     return None
 
 
+def temporary_relation(ex: Extraction, rel: RelationOut, canon: str, now: dt.datetime) -> bool:
+    """Shared expiry-based trip guard, evaluated on extraction references as in apply."""
+    temporary = {n.lower() for m in ex.memories
+                 if clock.parse_until(m.valid_until, now, m.kind) is not None for n in m.about}
+    lasting = {n.lower() for m in ex.memories
+               if clock.parse_until(m.valid_until, now, m.kind) is None for n in m.about}
+    return (not rel.ended and ontology.rule(canon, "cardinality") == "one"
+            and rel.target.lower() in temporary and rel.target.lower() not in lasting)
+
+
 class MemoryStore:
-    def __init__(self, driver, user_name: str, agent: str | None = None):
+    def __init__(self, driver, user_name: str, agent: str | None = None, *, read_only: bool = False):
         self.driver = driver
         self.user_name = user_name
         self.user = f"user:{user_name.lower()}"
@@ -201,6 +212,9 @@ class MemoryStore:
         # queries inside the worker's open transaction.
         self._local = threading.local()
         self.entity_log: list[str] = []  # renames, merges, kind changes (see resolve_entity)
+        self._read_only = read_only
+        if read_only:
+            return  # no schema, ontology, user, or embedding writes in a preview
         ensure_schema(driver)
         global _ontology_loaded
         if not _ontology_loaded:
@@ -216,6 +230,21 @@ class MemoryStore:
             name=user_name, vec=embed([f"{user_name}, the user"])[0],
         )
 
+    @classmethod
+    @contextmanager
+    def read_view(cls, driver, user_name: str, agent: str | None = None):
+        """A query-guarded view; routing alone does not prevent writes on every server."""
+        view = cls(driver, user_name, agent, read_only=True)
+        with driver.session(default_access_mode="READ") as session:
+            with session.begin_transaction() as tx:
+                view._local.tx = tx
+                try:
+                    yield view
+                finally:
+                    view._local.tx = None
+                    if not tx.closed():
+                        tx.rollback()
+
     def _q(self, query: str, now: dt.datetime | None = None, **params) -> list[dict]:
         """Run a query with $user and $now always set ($now: the conversation's clock).
 
@@ -225,6 +254,12 @@ class MemoryStore:
                   "vprop": PROFILE.prop, "memory_vec": PROFILE.index("memory_vec"),
                   "entity_vec": PROFILE.index("entity_vec"), **params}
         tx = getattr(self._local, "tx", None)
+        if self._read_only:
+            if tx is None:
+                raise PermissionError("read-only queries require an open read_view")
+            # EXPLAIN plans but never executes a statement, including procedure calls.
+            if tx.run("EXPLAIN " + query, **params).consume().query_type != "r":
+                raise PermissionError("read-only view rejected a write query")
         if tx is not None:
             return tx.run(query, **params).data()
         records, _, _ = self.driver.execute_query(query, **params)
@@ -241,6 +276,8 @@ class MemoryStore:
         - execute_write retries transient errors (deadlocks, leader changes) by running
           `work` again from the start, so `work` must not have side effects outside the graph.
         Nested calls join the outer transaction."""
+        if self._read_only:
+            raise PermissionError("read-only view cannot apply changes")
         if getattr(self._local, "tx", None) is not None:
             return work()
 
@@ -316,27 +353,9 @@ class MemoryStore:
     def _is_user(self, name: str) -> bool:
         return name.strip().lower() in {"user", "me", "i", self.user, self.user_name.lower()}
 
-    def resolve_entity(self, name: str, kind: str = "thing", aliases=(), summary: str = "",
-                       ref: str | None = None, new: bool = False, corrected: bool = False) -> str:
-        """Find-or-create an entity.
-
-        1. `ref` — the extractor pointed at a known entity id
-        2. `new` — the extractor says it's a different entity with a known name (a second Sam)
-        3. exact name/alias; if several share the name, the one whose summary is most similar
-        4. embedding similarity (same or compatible kind) above ENTITY_MATCH_SCORE
-        5. otherwise create it
-
-        Then, for a known entity (each change is logged in self.entity_log):
-        - the name: a real name replaces a role ("Mark's son" -> "Logan"), and `corrected`
-          replaces a wrong one ("Maya" -> "Maia"); the old name stays as an alias
-        - another name: kept as an alias only if it's a role ("Dad") or close to a known name
-          ("Bob" ~ "Robert"). A different name ("Jordan" for Sam) is more likely a wrong `ref`
-          than a nickname, and an alias would send every later "Jordan" to Sam.
-        - the kind: "thing" upgrades to anything more specific, never the other way
-        - a role-named duplicate ("Pytest's sister") listed in `aliases` is merged into it
-        """
-        if self._is_user(name):
-            return self.user
+    def _find_entity(self, name: str, kind: str, aliases=(), summary: str = "",
+                     ref: str | None = None, new: bool = False) -> tuple[str | None, np.ndarray]:
+        """Read-only selection used by both writes and current-graph previews."""
         vec = embed([f"{name} ({kind}): {summary}"])[0]
         hit = self._q("MATCH (e:Entity {id: $id, user: $user}) RETURN e.id AS id", id=ref) if ref else []
         names = [n.lower() for n in [name, *aliases]]
@@ -361,7 +380,52 @@ class MemoryStore:
                 vec=vec, kinds=_compatible_kinds(kind), min=ENTITY_MATCH_SCORE,
             )
             hit = [c for c in candidates if _name_similarity([name, *aliases], c["names"]) >= NAME_MATCH_MIN][:1]
-        if not hit:  # a new entity: nothing to reconcile
+        return (hit[0]["id"] if hit else None), vec
+
+    def _entity_changes(self, cur: dict, incoming: EntityOut) -> dict:
+        name, kind, summary = incoming.name, incoming.kind, incoming.summary
+        aliases, ref, corrected = incoming.aliases, incoming.ref, incoming.corrected
+        known = [cur["name"], *cur["aliases"]]
+        differs = name.lower() not in {k.lower() for k in known}
+        rename = name.lower() != cur["name"].lower() and not is_role_name(name) and (
+            is_role_name(cur["name"]) or (corrected and bool(ref)))
+        keep_name = rename or not differs or is_role_name(name) or _similar_names(name, known)
+        final = name if rename else cur["name"]
+        all_aliases = list(dict.fromkeys([*cur["aliases"], *aliases, cur["name"], *([name] if keep_name else [])]))
+        return {"name": final, "kind": kind if cur["kind"] == "thing" and kind != "thing" else cur["kind"],
+                "summary": summary or cur["summary"],
+                "aliases": [a for a in all_aliases if a.lower() != final.lower()],
+                "rename": rename, "differs": differs, "keep_name": keep_name}
+
+    def _role_merges(self, entity_id: str, aliases) -> list[dict]:
+        return [d for d in self._q(
+            "MATCH (e:Entity {user: $user}) WHERE e.id <> $id AND NOT e:User AND toLower(e.name) IN $names "
+            "RETURN e.id AS id, e.name AS name", id=entity_id, names=[a.lower() for a in aliases]
+        ) if is_role_name(d["name"])]
+
+    def resolve_entity(self, name: str, kind: str = "thing", aliases=(), summary: str = "",
+                       ref: str | None = None, new: bool = False, corrected: bool = False) -> str:
+        """Find-or-create an entity.
+
+        1. `ref` — the extractor pointed at a known entity id
+        2. `new` — the extractor says it's a different entity with a known name (a second Sam)
+        3. exact name/alias; if several share the name, the one whose summary is most similar
+        4. embedding similarity (same or compatible kind) above ENTITY_MATCH_SCORE
+        5. otherwise create it
+
+        Then, for a known entity (each change is logged in self.entity_log):
+        - the name: a real name replaces a role ("Mark's son" -> "Logan"), and `corrected`
+          replaces a wrong one ("Maya" -> "Maia"); the old name stays as an alias
+        - another name: kept as an alias only if it's a role ("Dad") or close to a known name
+          ("Bob" ~ "Robert"). A different name ("Jordan" for Sam) is more likely a wrong `ref`
+          than a nickname, and an alias would send every later "Jordan" to Sam.
+        - the kind: "thing" upgrades to anything more specific, never the other way
+        - a role-named duplicate ("Pytest's sister") listed in `aliases` is merged into it
+        """
+        if self._is_user(name):
+            return self.user
+        entity_id, vec = self._find_entity(name, kind, aliases, summary, ref, new)
+        if not entity_id:  # a new entity: nothing to reconcile
             entity_id = _new_id("e")
             self._q(
                 """
@@ -374,49 +438,37 @@ class MemoryStore:
             )
             return entity_id
 
-        entity_id = hit[0]["id"]
         cur = self._q("MATCH (e:Entity {id: $id}) RETURN e.name AS name, e.kind AS kind, "
                       "coalesce(e.aliases, []) AS aliases, coalesce(e.summary, '') AS summary", id=entity_id)[0]
-        known = [cur["name"], *cur["aliases"]]
-        differs = name.lower() not in {k.lower() for k in known}
-        rename = name.lower() != cur["name"].lower() and not is_role_name(name) and (
-            is_role_name(cur["name"]) or (corrected and bool(ref)))
-        keep_name = rename or not differs or is_role_name(name) or _similar_names(name, known)
+        changes = self._entity_changes(cur, EntityOut.model_construct(name=name, kind=kind, summary=summary,
+                                                     aliases=list(aliases), ref=ref, corrected=corrected))
+        rename, differs, keep_name = changes["rename"], changes["differs"], changes["keep_name"]
         if rename:
             how = "name corrected" if corrected and not is_role_name(cur["name"]) else f"{cur['name']} kept as an alias"
             self.entity_log.append(f"named {cur['name']} -> {name} ({how})")
         elif differs and not keep_name:
             self.entity_log.append(f"kept {cur['name']}: '{name}' matched it by id but isn't one of its names "
                                    "(not added as an alias)")
-        new_kind = kind if cur["kind"] == "thing" and kind != "thing" else cur["kind"]
+        new_kind = changes["kind"]
         if new_kind != cur["kind"]:
             self.entity_log.append(f"{cur['name'] if not rename else name} is a {new_kind} (was {cur['kind']})")
-        final = name if rename else cur["name"]
-        final_summary = summary or cur["summary"]
+        final, final_summary = changes["name"], changes["summary"]
         self._q(
             """
             MATCH (e:Entity {id: $id})
             SET e.name = $final, e.kind = $kind, e.summary = $summary, e.updated_at = datetime(),
-                e.aliases = [a IN apoc.coll.toSet(coalesce(e.aliases, []) + $aliases + $before + $incoming)
-                             WHERE toLower(a) <> toLower($final)]
+                e.aliases = $aliases
             WITH e CALL db.create.setNodeVectorProperty(e, $vprop, $vec)
             """,
             id=entity_id, final=final, kind=new_kind, summary=final_summary,
-            aliases=list(aliases), before=[cur["name"]], incoming=[name] if keep_name else [],
+            aliases=changes["aliases"],
             vec=embed([f"{final} ({new_kind}): {final_summary}"])[0],
         )
         # A placeholder the extractor now says is this entity ("Maya", aliases ["Pytest's sister"]):
         # one person, so one node. Only role-named ones: two real "Sam"s may be two people.
-        for dup in self._q(
-            """
-            MATCH (e:Entity {user: $user}) WHERE e.id <> $id AND NOT e:User AND toLower(e.name) IN $names
-            RETURN e.id AS id, e.name AS name
-            """,
-            id=entity_id, names=[a.lower() for a in aliases],
-        ):
-            if is_role_name(dup["name"]):
-                self.merge_entities(entity_id, dup["id"])
-                self.entity_log.append(f"merged {dup['name']} into {final} (the same {kind})")
+        for dup in self._role_merges(entity_id, aliases):
+            self.merge_entities(entity_id, dup["id"])
+            self.entity_log.append(f"merged {dup['name']} into {final} (the same {kind})")
         return entity_id
 
     def merge_entities(self, keep: str, drop: str) -> None:
@@ -476,6 +528,38 @@ class MemoryStore:
         Boundaries are never private: a boundary set with one persona protects with all."""
         return mem.kind != "boundary" and (mem.private or mem.sensitive)
 
+    def _memory_decision(self, mem: MemoryOut, vec, about_ids: set[str], episode_id: str | None,
+                         now: dt.datetime, stored: list, tombstones: list) -> dict:
+        """Classify without writes; retain the write path's scores, filters and reasons."""
+        gone = max((float(np.dot(vec, t)) for t, ids in tombstones if ids <= about_ids), default=float("-inf"))
+        if gone >= FORGOTTEN_SCORE:
+            return {"action": "skip", "reason": "skipped a memory the user asked to forget earlier in this conversation "
+                    f"(cosine {gone:.3f} ≥ {FORGOTTEN_SCORE})"}
+        repeat = max((float(np.dot(vec, v)) for v, ids in stored if ids <= about_ids), default=float("-inf"))
+        if repeat >= DUPLICATE_SCORE:
+            return {"action": "skip", "reason": f"skipped a repeat within this extraction: {mem.text} "
+                    f"(cosine {repeat:.3f} ≥ {DUPLICATE_SCORE})"}
+        nearest = self._q(
+            """
+            CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node, score
+            WHERE node.user = $user AND node.invalidated_at IS NULL
+              AND (node.valid_until IS NULL OR node.valid_until > $now)  // expired: say it again = new
+              AND """ + visible("node") + """
+              // same dates too: "dentist on 2026-11-12" -> "...on 2026-11-17" reads almost the
+              // same but is a real correction; an identical "replacement" is just a duplicate
+              AND coalesce(node.due_on, date('1900-01-01')) = coalesce($due, date('1900-01-01'))
+              AND coalesce(node.occurred_on, date('1900-01-01')) = coalesce($occurred, date('1900-01-01'))
+              AND all(x IN [(node)-[:ABOUT]->(e) WHERE NOT e:User | e.id] WHERE x IN $about)
+            RETURN node.id AS id, node.text AS text, score ORDER BY score DESC LIMIT 1
+            """,
+            vec=vec, about=sorted(about_ids), due=_to_date(mem.due_on), occurred=_to_date(mem.occurred_on), now=now,
+        )
+        if nearest and nearest[0]["score"] >= DUPLICATE_SCORE:
+            return {"action": "reinforce", "reason": "matching current memory", **nearest[0]}
+        why = (f"  [new: closest known {nearest[0]['score']:.3f} < {DUPLICATE_SCORE}]" if nearest
+               else "  [new: nothing similar with the same dates and entities]")
+        return {"action": "new", "reason": why}
+
     @traced("store.apply", "CHAIN")
     def apply(self, ex: Extraction, episode_id: str | None = None, today: dt.date | None = None) -> list[str]:
         """Store one extraction, all or nothing (one transaction). Returns a log of what changed."""
@@ -515,16 +599,10 @@ class MemoryStore:
                 resolved.append((rel, *((b, a) if flip else (a, b)), canon, "flipped" if flip else how))
         # Guard (Lesson 13): a one-at-a-time relation (lives_in) to something that only a
         # temporary memory mentions is a trip, not a move. Applying it would end the real home.
-        temporary = {n.lower() for m in ex.memories
-                     if clock.parse_until(m.valid_until, now, m.kind) is not None for n in m.about}
-        lasting = {n.lower() for m in ex.memories
-                   if clock.parse_until(m.valid_until, now, m.kind) is None for n in m.about}
         kept = []
         for item in resolved:
             rel, canon = item[0], item[3]
-            target = rel.target.lower()
-            if (not rel.ended and ontology.rule(canon, "cardinality") == "one"
-                    and target in temporary and target not in lasting):
+            if temporary_relation(ex, rel, canon, now):
                 log.append(f"ignored {rel.source} -{canon}-> {rel.target}: only a temporary memory "
                            "mentions it (a trip, not a move)")
                 continue
@@ -653,34 +731,11 @@ class MemoryStore:
         for mem, vec in zip(ex.memories, vectors):
             until = clock.parse_until(mem.valid_until, now, mem.kind)
             about_ids = {eid for n in mem.about if (eid := self._lookup(n, known)) and eid != self.user}
-            # Each decision says WHY in its log line (the web UI shows them as they happen).
-            # These two compare raw cosine in Python; the index lookup below uses its 0-1 score.
-            gone = max((float(np.dot(vec, t)) for t, ids in tombstones if ids <= about_ids), default=float("-inf"))
-            if gone >= FORGOTTEN_SCORE:
-                log.append("skipped a memory the user asked to forget earlier in this conversation "
-                           f"(cosine {gone:.3f} ≥ {FORGOTTEN_SCORE})")
+            decision = self._memory_decision(mem, vec, about_ids, episode_id, now, stored, tombstones)
+            if decision["action"] == "skip":
+                log.append(decision["reason"])
                 continue
-            repeat = max((float(np.dot(vec, v)) for v, ids in stored if ids <= about_ids), default=float("-inf"))
-            if repeat >= DUPLICATE_SCORE:
-                log.append(f"skipped a repeat within this extraction: {mem.text} "
-                           f"(cosine {repeat:.3f} ≥ {DUPLICATE_SCORE})")
-                continue
-            nearest = q(
-                """
-                CALL db.index.vector.queryNodes($memory_vec, 50, $vec) YIELD node, score
-                WHERE node.user = $user AND node.invalidated_at IS NULL
-                  AND (node.valid_until IS NULL OR node.valid_until > $now)  // expired: say it again = new
-                  AND """ + visible("node") + """
-                  // same dates too: "dentist on 2026-11-12" -> "...on 2026-11-17" reads almost the
-                  // same but is a real correction; an identical "replacement" is just a duplicate
-                  AND coalesce(node.due_on, date('1900-01-01')) = coalesce($due, date('1900-01-01'))
-                  AND coalesce(node.occurred_on, date('1900-01-01')) = coalesce($occurred, date('1900-01-01'))
-                  AND all(x IN [(node)-[:ABOUT]->(e) WHERE NOT e:User | e.id] WHERE x IN $about)
-                RETURN node.id AS id, node.text AS text, score ORDER BY score DESC LIMIT 1
-                """,
-                vec=vec, about=sorted(about_ids), due=_to_date(mem.due_on), occurred=_to_date(mem.occurred_on),
-            )
-            dup = [n for n in nearest if n["score"] >= DUPLICATE_SCORE]
+            dup = [decision] if decision["action"] == "reinforce" else []
             if dup:  # already known: reinforce instead of storing a near-copy
                 q(
                     """
@@ -752,8 +807,7 @@ class MemoryStore:
                 flags += f" (until {until:%Y-%m-%d %H:%M})"
             if self._private(mem):
                 flags += f" (private to {self.agent})"
-            why = (f"  [new: closest known {nearest[0]['score']:.3f} < {DUPLICATE_SCORE}]" if nearest
-                   else "  [new: nothing similar with the same dates and entities]")
+            why = decision["reason"]
             log.append(f"+ [{mem.kind}] {mem.text}{flags}" + (f"  (replaces {', '.join(retired)})" if retired else "") + why)
 
         # Provenance: each edge lists the memories that support it, those about BOTH its ends

@@ -6,20 +6,22 @@
 
 Memories are extracted when they're said, so a better prompt only helps from then on. After
 the prompt learns something new (named things someone likes became entities, Logan -likes->
-Minecraft), this runs the end-of-episode pass over each stored transcript. It's safe to run
-twice: what's already stored is reinforced, not duplicated (the write path's dedupe), and
-only new entities, links and memories are added. Each episode is read on its own date, so
-"next Friday" resolves as it did then. Costs one LLM call per episode with 2+ user messages.
+Minecraft), this runs the end-of-episode pass over each stored transcript. Existing matches are usually reinforced by the write path, but this is not a guarantee of
+idempotence: different extraction output or changed graph state can produce new items.
+Review a dry run before applying; apply can also reconcile entities and retire old facts. Each episode is read on its own date, so
+"next Friday" resolves as it did then. Refresh uses one LLM call per episode with at least one user message.
 """
 from __future__ import annotations
 
 import sys
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import ClientError
 
 from config import NEO4J_AUTH, NEO4J_URI
 from companion.graph import episode_pass
 from companion.store import MemoryStore
+from companion.preview import format_preview, preview_extraction
 
 
 def episodes(store: MemoryStore, last: int | None = None) -> list[dict]:
@@ -33,19 +35,41 @@ def episodes(store: MemoryStore, last: int | None = None) -> list[dict]:
 
 
 def reextract(driver, user: str, dry_run: bool = False, last: int | None = None) -> list[str]:
+    if dry_run:
+        try:
+            return _dry_run(driver, user, last)
+        except ClientError as exc:
+            if "index" not in str(exc).lower() and "schema" not in str(exc).lower():
+                raise
+            raise RuntimeError("Dry run requires existing schema/vector indexes; run the normal setup first. "
+                               "The preview will not initialize or repair the database.") from exc
     log = []
     for ep in episodes(MemoryStore(driver, user), last):
-        store = MemoryStore(driver, user, agent=ep["agent"])  # as the persona that heard it
+        store = MemoryStore(driver, user, agent=ep["agent"])
         day = ep["day"].to_native()
-        if dry_run:
+        log += [f"{ep['id']} ({day}) {l}" for l in episode_pass(store, ep["id"], day, refresh=True)]
+    return log
+
+
+def _dry_run(driver, user: str, last: int | None) -> list[str]:
+    log = [f"current-graph preview for {user}: no database writes",
+           "Each episode is compared with the current graph, not with earlier proposals. "
+           "A later apply reruns extraction; model output, intervening writes, and earlier applied "
+           "episodes can change its result."]
+    with MemoryStore.read_view(driver, user) as view:
+        selected = episodes(view, last)
+    if not selected:
+        return [*log, "no episodes to re-extract"]
+    for ep in selected:
+        with MemoryStore.read_view(driver, user, agent=ep["agent"]) as store:
+            day = ep["day"].to_native()
+            log.append(f"{ep['id']} ({day}, persona={store.agent})")
             ex = episode_pass(store, ep["id"], day, apply=False, refresh=True)
             if ex is None:
+                log.append("  skipped: no eligible user turns")
                 continue
-            log.append(f"{ep['id']} ({day}): entities {[e.name for e in ex.entities]}, "
-                       f"links {[f'{r.source} -{r.type}-> {r.target}' for r in ex.relations]}, "
-                       f"{len(ex.memories)} memories")
-        else:
-            log += [f"{ep['id']} ({day}) {l}" for l in episode_pass(store, ep["id"], day, refresh=True)]
+            items = preview_extraction(store, ex, ep["id"], day)
+            log += format_preview(items) if items else ["  no candidates"]
     return log
 
 
