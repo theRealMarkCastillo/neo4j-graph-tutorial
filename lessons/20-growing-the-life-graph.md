@@ -280,6 +280,13 @@ Each episode is compared with the **current graph**, not the results of applying
 proposals. A later apply reruns the model, so it is not an execution of an approved saved
 preview. Review changes again if the graph, extraction model, or rules have changed.
 
+**Historical refresh is not permission to share.** Stored private evidence imposes a
+privacy floor on new material; mixed or missing provenance is treated conservatively.
+Private-context refresh retains existing shared facts and entity metadata, and defers
+destructive changes or global boundary/ontology writes. Both preview and apply use the
+same policy, while normal chat keeps its existing sharing behavior. The complete rules
+and their tradeoffs are in [refresh privacy](../docs/refresh-privacy.md).
+
 The database must already be set up for the active embedding profile. Missing vector
 indexes produce an instruction to run normal setup; dry run does not create or repair them.
 An unknown user or one without episodes gets an explicit no-episodes result and is not

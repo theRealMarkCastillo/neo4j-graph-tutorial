@@ -156,7 +156,7 @@ def entity_visible(e: str) -> str:
     summary would give the private memory away ("Dr. Lee, the user's therapist")."""
     return (f"(EXISTS {{ MATCH ({e})<-[:ABOUT]-(vm:Memory) WHERE {visible('vm')} }}"
             f" OR EXISTS {{ MATCH ()-[vr:RELATED]-({e}) WHERE {visible('vr')} }}"
-            f" OR NOT EXISTS {{ MATCH ({e})<-[:ABOUT|RELATED]-() }})")
+            f" OR (NOT EXISTS {{ MATCH ({e})<-[:ABOUT|RELATED]-() }} AND {visible(e)}))")
 
 def one_person_roles() -> set[str]:
     """Relations to exactly one person at a time: mother, father, and the "one at a time"
@@ -353,17 +353,32 @@ class MemoryStore:
     def _is_user(self, name: str) -> bool:
         return name.strip().lower() in {"user", "me", "i", self.user, self.user_name.lower()}
 
+    @contextmanager
+    def refresh_scope(self, enabled: bool):
+        """Keep historical matching inside the source persona's existing visibility."""
+        previous = getattr(self._local, "refresh", False)
+        self._local.refresh = enabled
+        try:
+            yield
+        finally:
+            self._local.refresh = previous
+
+    def _refresh_visible(self, variable: str) -> str:
+        return " AND " + entity_visible(variable) if getattr(self._local, "refresh", False) else ""
+
     def _find_entity(self, name: str, kind: str, aliases=(), summary: str = "",
                      ref: str | None = None, new: bool = False) -> tuple[str | None, np.ndarray]:
         """Read-only selection used by both writes and current-graph previews."""
         vec = embed([f"{name} ({kind}): {summary}"])[0]
-        hit = self._q("MATCH (e:Entity {id: $id, user: $user}) RETURN e.id AS id", id=ref) if ref else []
+        hit = self._q("MATCH (e:Entity {id: $id, user: $user}) WHERE true" + self._refresh_visible("e") +
+                      " RETURN e.id AS id", id=ref) if ref else []
         names = [n.lower() for n in [name, *aliases]]
         if not hit and not new:
             hit = self._q(
                 """
                 MATCH (e:Entity {user: $user}) WHERE e.kind <> 'self'
                   AND (toLower(e.name) IN $names OR any(a IN coalesce(e.aliases, []) WHERE toLower(a) IN $names))
+                """ + self._refresh_visible("e") + """
                 // a real name before a placeholder that merely lists it
                 RETURN e.id AS id ORDER BY CASE WHEN toLower(e.name) = $name THEN 0 ELSE 1 END,
                        vector.similarity.cosine(e[$vprop], $vec) DESC LIMIT 1
@@ -375,6 +390,7 @@ class MemoryStore:
                 """
                 CALL db.index.vector.queryNodes($entity_vec, 50, $vec) YIELD node, score
                 WHERE node.user = $user AND node.kind IN $kinds AND score >= $min
+                """ + self._refresh_visible("node") + """
                 RETURN node.id AS id, [node.name] + coalesce(node.aliases, []) AS names ORDER BY score DESC
                 """,
                 vec=vec, kinds=_compatible_kinds(kind), min=ENTITY_MATCH_SCORE,
@@ -400,11 +416,13 @@ class MemoryStore:
     def _role_merges(self, entity_id: str, aliases) -> list[dict]:
         return [d for d in self._q(
             "MATCH (e:Entity {user: $user}) WHERE e.id <> $id AND NOT e:User AND toLower(e.name) IN $names "
-            "RETURN e.id AS id, e.name AS name", id=entity_id, names=[a.lower() for a in aliases]
+            + self._refresh_visible("e") + " RETURN e.id AS id, e.name AS name",
+            id=entity_id, names=[a.lower() for a in aliases]
         ) if is_role_name(d["name"])]
 
     def resolve_entity(self, name: str, kind: str = "thing", aliases=(), summary: str = "",
-                       ref: str | None = None, new: bool = False, corrected: bool = False) -> str:
+                       ref: str | None = None, new: bool = False, corrected: bool = False,
+                       *, private: bool = False) -> str:
         """Find-or-create an entity.
 
         1. `ref` — the extractor pointed at a known entity id
@@ -431,10 +449,12 @@ class MemoryStore:
                 """
                 CREATE (e:Entity {id: $id, user: $user, name: $name, kind: $kind, summary: $summary,
                                   aliases: [a IN apoc.coll.toSet($aliases) WHERE toLower(a) <> toLower($name)],
+                                  private: CASE WHEN $private THEN true ELSE null END,
+                                  agent: CASE WHEN $private THEN $agent ELSE null END,
                                   created_at: datetime(), updated_at: datetime()})
                 WITH e CALL db.create.setNodeVectorProperty(e, $vprop, $vec)
                 """,
-                id=entity_id, name=name, kind=kind, summary=summary, aliases=list(aliases), vec=vec,
+                id=entity_id, name=name, kind=kind, summary=summary, aliases=list(aliases), vec=vec, private=private,
             )
             return entity_id
 
@@ -514,7 +534,8 @@ class MemoryStore:
         hit = self._q(
             """
             MATCH (e:Entity {user: $user})
-            WHERE e.id = $n OR toLower(e.name) = $n OR any(a IN coalesce(e.aliases, []) WHERE toLower(a) = $n)
+            WHERE (e.id = $n OR toLower(e.name) = $n OR any(a IN coalesce(e.aliases, []) WHERE toLower(a) = $n))
+            """ + self._refresh_visible("e") + """
             RETURN e.id AS id ORDER BY CASE WHEN e.id = $n THEN 0 ELSE 1 END, e.updated_at DESC LIMIT 1
             """,
             n=key,
@@ -550,7 +571,8 @@ class MemoryStore:
               AND coalesce(node.due_on, date('1900-01-01')) = coalesce($due, date('1900-01-01'))
               AND coalesce(node.occurred_on, date('1900-01-01')) = coalesce($occurred, date('1900-01-01'))
               AND all(x IN [(node)-[:ABOUT]->(e) WHERE NOT e:User | e.id] WHERE x IN $about)
-            RETURN node.id AS id, node.text AS text, score ORDER BY score DESC LIMIT 1
+            RETURN node.id AS id, node.text AS text, coalesce(node.private,false) AS private,
+                   node.agent AS agent, score ORDER BY score DESC LIMIT 1
             """,
             vec=vec, about=sorted(about_ids), due=_to_date(mem.due_on), occurred=_to_date(mem.occurred_on), now=now,
         )
@@ -560,12 +582,95 @@ class MemoryStore:
                else "  [new: nothing similar with the same dates and entities]")
         return {"action": "new", "reason": why}
 
-    @traced("store.apply", "CHAIN")
-    def apply(self, ex: Extraction, episode_id: str | None = None, today: dt.date | None = None) -> list[str]:
-        """Store one extraction, all or nothing (one transaction). Returns a log of what changed."""
-        return self._write(lambda: self._apply(ex, episode_id, today))
+    def refresh_privacy(self, ex: Extraction, episode_id: str | None) -> dict:
+        """A historical model output cannot grant a new permission to share.
 
-    def _apply(self, ex: Extraction, episode_id: str | None, today: dt.date | None) -> list[str]:
+        Mixed/private or untraceable source evidence gets an additive, private-only
+        refresh. Public-only evidence keeps the normal structural refresh behavior.
+        Read-only so dry run and apply use the same decision.
+        """
+        [source] = self._q(
+            "MATCH (m:Memory {user:$user})-[:FROM]->(:Episode {id:$ep, user:$user}) "
+            "WHERE m.kind <> 'boundary' RETURN count(m) AS n, "
+            "any(p IN collect(coalesce(m.private,false) OR coalesce(m.sensitive,false)) WHERE p) AS private",
+            ep=episode_id,
+        )
+        if source["private"] or any(self._private(m) for m in ex.memories):
+            return {"private": True, "reason": "private source evidence or incoming private material"}
+        if not source["n"]:
+            return {"private": True, "reason": "original source privacy cannot be established"}
+        names = {n for m in ex.memories for n in m.about}
+        names.update(n for e in ex.entities for n in [e.name, *e.aliases, *([e.ref] if e.ref else [])])
+        names.update(n for r in ex.relations for n in (r.source, r.target))
+        names.update(ex.forget_entities)
+        ids = {eid for n in names if (eid := self._lookup(n, {})) and eid != self.user}
+        # Include fuzzy-selected entity identities without reconciling or writing them.
+        for ent in ex.entities:
+            if not self._is_user(ent.name):
+                eid, _ = self._find_entity(ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new)
+                if eid:
+                    ids.add(eid)
+        cited = list(ex.invalidate) + list(ex.completed_plans) + [i for m in ex.memories for i in m.supersedes]
+        protected = self._q(
+            "MATCH (m:Memory {user:$user}) WHERE m.kind <> 'boundary' "
+            "AND (coalesce(m.private,false) OR coalesce(m.sensitive,false)) "
+            "AND (m.id IN $cited OR toLower(trim(m.text)) IN $texts "
+            "OR EXISTS { MATCH (m)-[:ABOUT]->(e) WHERE e.id IN $ids }) RETURN m.id AS id LIMIT 1",
+            cited=cited, texts=[m.text.strip().lower() for m in ex.memories], ids=sorted(ids),
+        )
+        if not protected and ids:
+            protected = self._q(
+                "MATCH (e:Entity {user:$user}) WHERE e.id IN $ids AND (coalesce(e.private,false) "
+                "OR EXISTS { MATCH (e)-[r:RELATED]-() WHERE coalesce(r.private,false) }) "
+                "RETURN e.id AS id LIMIT 1", ids=sorted(ids),
+            )
+        return {"private": bool(protected), "reason": "related stored evidence is private" if protected else "stored source evidence is shared"}
+
+    def refresh_relation_guard(self, rel, a, b, canon, how) -> dict | None:
+        """Private-context refresh may add private links, not rewrite existing graph facts."""
+        if rel.ended:
+            return {"action": "skip", "reason": "deferred relation ending during private refresh"}
+        if how == "new":
+            return {"action": "skip", "reason": "deferred ontology proposal: private examples must not enter the global ontology"}
+        existing = self._q("MATCH (:Entity {id:$a, user:$user})-[r:RELATED {type:$type}]->(:Entity {id:$b}) "
+                           "RETURN r.until IS NULL AS current", a=a, b=b, type=canon)
+        if existing:
+            return {"action": "existing" if any(r["current"] for r in existing) else "skip",
+                    "reason": "existing relation retained unchanged during private refresh"}
+        types = sorted(ontology.lineage(canon) | {canon}) if ontology.rule(canon, "cardinality") == "one" else []
+        conflicts = self._q(
+            "MATCH (:Entity {id:$a, user:$user})-[r:RELATED]->(e) WHERE r.until IS NULL "
+            "AND (r.type IN $types OR (e.id=$b AND r.type IN $exclusive)) RETURN r.type AS type LIMIT 1",
+            a=a, b=b, types=types, exclusive=ontology.rule(canon, "exclusive") or [],
+        )
+        if conflicts:
+            return {"action": "skip", "reason": "deferred relation replacement during private refresh"}
+        if a == self.user and canon in one_person_roles() and "step" not in rel.type.lower():
+            roles = self._q("MATCH (:User {id:$user})-[r:RELATED]->(e) WHERE e.id<>$b AND r.until IS NULL "
+                            "AND r.type IN $types AND NOT toLower(coalesce(r.said,'')) CONTAINS 'step' "
+                            "RETURN e.name AS name", b=b, types=sorted(ontology.lineage(canon) | {canon}))
+            if any(is_role_name(r["name"]) for r in roles):
+                return {"action": "skip", "reason": "deferred role-entity merge during private refresh"}
+        return None
+
+    def refresh_memory_guard(self, mem, decision, protected: bool) -> dict:
+        if protected and mem.kind == "boundary":
+            return {"action": "skip", "reason": "deferred global boundary during private refresh; confirm through normal chat"}
+        if (protected and decision["action"] == "reinforce"
+                and not (decision.get("private", False) and decision.get("agent") == self.agent)):
+            return {"action": "skip", "reason": "shared memory retained without metadata or ABOUT changes during private refresh"}
+        return decision
+
+    @traced("store.apply", "CHAIN")
+    def apply(self, ex: Extraction, episode_id: str | None = None, today: dt.date | None = None,
+              *, refresh: bool = False) -> list[str]:
+        """Store one extraction, all or nothing (one transaction). Returns a log of what changed."""
+        def work():
+            with self.refresh_scope(refresh):
+                return self._apply(ex, episode_id, today, refresh=refresh)
+        return self._write(work)
+
+    def _apply(self, ex: Extraction, episode_id: str | None, today: dt.date | None, *, refresh: bool = False) -> list[str]:
         today = today or dt.date.today()
         now = clock.now_for(today)
         q = partial(self._q, now=now)
@@ -574,9 +679,20 @@ class MemoryStore:
         self.forgotten_terms: list[str] = []  # names forgotten by this call (the graph redacts its thread)
         self.written_ids: list[str] = []      # memories created or reinforced by this call
         self.entity_log = []
+        policy = self.refresh_privacy(ex, episode_id) if refresh else {"private": False}
+        protected = policy["private"]
+        if protected:
+            log.append(f"refresh privacy floor: {policy['reason']}")
         for ent in ex.entities:
-            eid = self.resolve_entity(ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new,
-                                      ent.corrected)
+            eid = None
+            if protected:
+                eid = self.user if self._is_user(ent.name) else self._find_entity(
+                    ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new)[0]
+                if eid:
+                    log.append(f"deferred entity metadata changes for {ent.name} during private refresh")
+            if not eid:
+                eid = self.resolve_entity(ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new,
+                                          ent.corrected, private=protected)
             for n in [ent.name, *ent.aliases, *([ent.ref] if ent.ref else [])]:
                 if known.get(n.lower(), eid) != eid:  # two different Sams in one extraction
                     log.append(f"warning: '{n}' names two entities here; references to it go to the last one")
@@ -615,6 +731,9 @@ class MemoryStore:
         linking = {(a, b, canon) for rel, a, b, canon, _ in resolved if not rel.ended}
         linked: list[tuple[str, str, str]] = []  # edges this extraction (re)asserts: evidence below
         for rel, a, b, canon, how in resolved:
+            if protected and (guard := self.refresh_relation_guard(rel, a, b, canon, how)):
+                log.append(guard["reason"])
+                continue
             if rel.ended and (a, b, canon) in linking:
                 continue  # "ended X" + "linked X" in one go: keep it linked
             info = q("MATCH (a:Entity {id: $a}), (b:Entity {id: $b}) RETURN a.name AS a, b.name AS b, b.kind AS kind",
@@ -628,6 +747,7 @@ class MemoryStore:
                     """
                     MATCH (:User {id: $user})-[r:RELATED]->(y:Entity) WHERE y.id <> $b AND r.until IS NULL
                       AND r.type IN $types AND NOT toLower(coalesce(r.said, '')) CONTAINS 'step'
+                    """ + self._refresh_visible("y") + """
                     RETURN y.id AS id, y.name AS name
                     """,
                     b=b, types=sorted(ontology.lineage(canon) | {canon}),
@@ -679,14 +799,17 @@ class MemoryStore:
                 """
                 MATCH (a:Entity {id: $a}), (b:Entity {id: $b})
                 MERGE (a)-[r:RELATED {type: $type}]->(b)
+                ON CREATE SET r.private = $private
                 WITH r, r.updated_at IS NULL OR r.until IS NOT NULL AS changed
                 SET r.since = coalesce($since, r.since), r.updated_at = $now, r.until = null,
                     r.said = $said_as, r.agent = coalesce(r.agent, $agent),
-                    r.private = $private AND coalesce(r.private, true)  // once shared, stays shared
+                    r.private = CASE WHEN $refresh THEN coalesce(r.private,false)
+                                     ELSE $private AND coalesce(r.private, true) END  // once shared, stays shared
                 RETURN changed
                 """,
                 a=a, b=b, type=canon, since=rel.since, now=now, said_as=rel.type,
-                private=rel.target.lower() in private_names and rel.target.lower() not in shared_names,
+                private=protected or (rel.target.lower() in private_names and rel.target.lower() not in shared_names),
+                refresh=refresh,
             )[0]["changed"]
             linked.append((a, b, canon))
             if changed:  # only log new or re-activated links
@@ -695,6 +818,9 @@ class MemoryStore:
         evidence: list[tuple[str, set[str]]] = []  # (memory id, entity ids it is about)
         retired_pairs: list[tuple[str, str | None]] = []  # (retired memory, its replacement)
         for mid in ex.invalidate:
+            if protected:
+                log.append(f"deferred retirement {mid} during private refresh")
+                continue
             if q(
                 """
                 MATCH (m:Memory {id: $id, user: $user}) WHERE m.invalidated_at IS NULL
@@ -709,6 +835,9 @@ class MemoryStore:
         restated = [{"due": d, "text": m.text.strip().lower()} for m in ex.memories
                     if m.kind == "plan" and (d := _to_date(m.due_on))]
         for mid in ex.completed_plans:
+            if protected:
+                log.append(f"deferred plan completion {mid} during private refresh")
+                continue
             [row] = q(
                 """
                 OPTIONAL MATCH (m:Memory {id: $id, user: $user, kind: 'plan', status: 'open'})
@@ -732,6 +861,7 @@ class MemoryStore:
             until = clock.parse_until(mem.valid_until, now, mem.kind)
             about_ids = {eid for n in mem.about if (eid := self._lookup(n, known)) and eid != self.user}
             decision = self._memory_decision(mem, vec, about_ids, episode_id, now, stored, tombstones)
+            decision = self.refresh_memory_guard(mem, decision, protected)
             if decision["action"] == "skip":
                 log.append(decision["reason"])
                 continue
@@ -763,7 +893,7 @@ class MemoryStore:
                     WHERE old.id IN $ids AND old.id <> $keep AND old.invalidated_at IS NULL
                     SET old.invalidated_at = $now MERGE (keep)-[:SUPERSEDES]->(old) RETURN old.id AS id
                     """,
-                    keep=dup[0]["id"], ids=mem.supersedes, now=now,
+                    keep=dup[0]["id"], ids=[] if protected else mem.supersedes, now=now,
                 ):
                     log.append(f"retired {old['id']} (replaced by {dup[0]['id']})")
                     retired_pairs.append((old["id"], dup[0]["id"]))
@@ -797,15 +927,15 @@ class MemoryStore:
                 id=mid, text=mem.text, kind=mem.kind, imp=mem.importance,
                 occurred=_to_date(mem.occurred_on), due=_to_date(mem.due_on),
                 annual=_annual(mem.annual_date), sensitive=mem.sensitive, until=until,
-                private=self._private(mem),
-                vec=vec, about=about, ep=episode_id or "", supersedes=mem.supersedes, now=now,
+                private=protected or self._private(mem),
+                vec=vec, about=about, ep=episode_id or "", supersedes=[] if protected else mem.supersedes, now=now,
             )[0]["retired"]
             evidence.append((mid, set(about)))
             retired_pairs += [(old, mid) for old in retired]
             flags = (" (sensitive)" if mem.sensitive else "") + (f" (yearly {mem.annual_date})" if _annual(mem.annual_date) else "")
             if until:
                 flags += f" (until {until:%Y-%m-%d %H:%M})"
-            if self._private(mem):
+            if protected or self._private(mem):
                 flags += f" (private to {self.agent})"
             why = decision["reason"]
             log.append(f"+ [{mem.kind}] {mem.text}{flags}" + (f"  (replaces {', '.join(retired)})" if retired else "") + why)
@@ -823,6 +953,9 @@ class MemoryStore:
         log += self._retire_links(retired_pairs, today, skip=linked)
 
         for name in ex.forget_entities:  # last, so memories made this turn about them go too
+            if protected:
+                log.append(f"deferred forgetting {name} during private refresh; confirm through normal chat")
+                continue
             gone = self.forget_entity(name, known)
             if gone:
                 self.forgotten_terms += gone["terms"]

@@ -68,7 +68,7 @@ def _dry_run(driver, user: str, last: int | None) -> list[str]:
             if ex is None:
                 log.append("  skipped: no eligible user turns")
                 continue
-            items = preview_extraction(store, ex, ep["id"], day)
+            items = preview_extraction(store, ex, ep["id"], day, refresh=True)
             log += format_preview(items) if items else ["  no candidates"]
     return log
 

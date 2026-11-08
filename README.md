@@ -275,6 +275,9 @@ failing is a regression.
 dates, existing/new entities and links, reinforcement ids/scores, and unresolved effects.
 It does not initialize schema or update user metadata. Set up the database normally first.
 A later apply reruns extraction and can differ; proposals are not a saved execution plan.
+Historical refresh preserves existing relation privacy. Private, mixed or untraceable
+source evidence gives new material a private floor and defers shared reconciliation;
+normal chat's sharing rules are unchanged. See [refresh privacy](docs/refresh-privacy.md).
 See [Lesson 20](lessons/20-growing-the-life-graph.md#review-a-current-graph-preview-before-applying).
 
 ## Common commands

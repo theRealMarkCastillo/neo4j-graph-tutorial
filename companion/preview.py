@@ -24,11 +24,24 @@ def _fields(model):
 
 
 def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: str,
-                       today: dt.date) -> list[dict]:
+                       today: dt.date, *, refresh: bool = False) -> list[dict]:
+    with store.refresh_scope(refresh):
+        return _preview_extraction(store, extraction, episode_id, today, refresh=refresh)
+
+
+def _preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: str,
+                        today: dt.date, *, refresh: bool) -> list[dict]:
     if not store._read_only:
         raise ValueError("preview_extraction requires a read-only store view")
     ex, now = extraction, clock.now_for(today)
+    if not any(getattr(ex, field) for field in type(ex).model_fields):
+        return []
+    policy = store.refresh_privacy(ex, episode_id) if refresh else {"private": False}
+    protected = policy["private"]
     items, known, entity_info = [], {}, {}
+    if refresh:
+        items.append(_item("privacy", "existing", "refresh privacy floor", policy["reason"],
+                           details={"private": protected, "rule": "private to source persona; no shared reconciliation" if protected else "shared source evidence"}))
     pending_merges = []
     merge_affected = set()
 
@@ -57,7 +70,9 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         if not eid:
             eid = f"proposal:{index}"
             entity_info[eid] = dict(name=ent.name, kind=ent.kind, aliases=ent.aliases, summary=ent.summary)
-            items.append(_item("entity", "new", ent.name, "no current entity match", details=details))
+            details["private"] = protected
+            items.append(_item("entity", "new", ent.name,
+                               f"new entity private to {store.agent}" if protected else "no current entity match", details=details))
         elif eid.startswith("proposal:"):
             items.append(_item("entity", "new", ent.name, "references an earlier proposed entity", details=details))
         elif eid == store.user:
@@ -67,6 +82,15 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
             cur = {**cur, "aliases": cur.get("aliases", []), "summary": cur.get("summary") or ""}
             changes = store._entity_changes(cur, ent)
             changed = {k: changes[k] for k in ("name", "kind", "summary", "aliases") if changes[k] != cur.get(k)}
+            if protected:
+                details.update(suppressed_changes=changed, changes={},
+                               before={k: cur.get(k) for k in ("name", "kind", "summary", "aliases")})
+                items.append(_item("entity", "existing", ent.name,
+                                   "existing entity metadata retained during private refresh", id=eid, details=details))
+                entity_info[eid] = cur
+                for n in [ent.name, *ent.aliases, *([ent.ref] if ent.ref else [])]:
+                    known[n.lower()] = eid
+                continue
             merges = store._role_merges(eid, ent.aliases)
             if merges:
                 changed["merge_entities"] = merges
@@ -112,6 +136,14 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         if temporary_relation(ex, rel, canon, now):
             items.append(_item("relation", "skip", text, "only a temporary memory mentions it (trip, not move)", details=details))
             continue
+        if protected and (guard := store.refresh_relation_guard(rel, a, b, canon, how)):
+            existing = store._q("MATCH (:Entity {id:$a, user:$user})-[r:RELATED {type:$type}]->(:Entity {id:$b}) "
+                                "RETURN properties(r) AS r", a=a, b=b, type=canon)
+            old_private = all(bool(r["r"].get("private")) for r in existing) if existing else None
+            details.update(refresh_protection=True, private=old_private, private_before=old_private,
+                           private_after=old_private, incoming_private=True)
+            items.append(_item("relation", guard["action"], text, guard["reason"], details=details))
+            continue
         if rel.ended and (a, b, canon) in linking:
             items.append(_item("relation", "skip", text, "same extraction reasserts the link", details=details))
             continue
@@ -122,9 +154,10 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         edges = store._q("MATCH (:Entity {id:$a, user:$user})-[r:RELATED]->(:Entity {id:$b}) "
                          "WHERE r.until IS NULL AND r.type IN $types RETURN properties(r) AS r", a=a, b=b, types=types)
         details["existing_links"] = [e["r"] for e in edges]
-        incoming_private = rel.target.lower() in private_names and rel.target.lower() not in shared_names
+        incoming_private = protected or (rel.target.lower() in private_names and rel.target.lower() not in shared_names)
         before_private = all(bool(e["r"].get("private")) for e in edges) if edges else None
-        after_private = all(incoming_private and e["r"].get("private", True) for e in edges) if edges else incoming_private
+        after_private = before_private if refresh and edges else (
+            all(incoming_private and e["r"].get("private", True) for e in edges) if edges else incoming_private)
         details.update(incoming_private=incoming_private, private_before=before_private,
                        private_after=after_private, private=after_private)
         if rel.ended:
@@ -134,7 +167,8 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         if a == store.user and canon in one_person_roles() and not is_role_name(entity(b).get("name", "")):
             roles = store._q("MATCH (:User {id:$user})-[r:RELATED]->(e:Entity) "
                              "WHERE e.id <> $b AND r.until IS NULL AND r.type IN $types "
-                             "AND NOT toLower(coalesce(r.said,'')) CONTAINS 'step' RETURN e.id AS id, e.name AS name",
+                             "AND NOT toLower(coalesce(r.said,'')) CONTAINS 'step' " + store._refresh_visible("e") +
+                             " RETURN e.id AS id, e.name AS name",
                              b=b, types=sorted(ontology.lineage(canon) | {canon}))
             roles = [r for r in roles if is_role_name(r["name"]) and "step" not in rel.type.lower()]
             if roles:
@@ -179,13 +213,14 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
             return None
         return rows[0]["m"] or {"text": mid, "_hidden": True}
 
-    pending_retirements = set(ex.invalidate)
+    pending_retirements = set() if protected else set(ex.invalidate)
     for mid in ex.invalidate:
         cur = memory(mid)
         hidden = cur and cur.get("_hidden")
-        items.append(_item("retirement", "unresolved" if hidden else
+        items.append(_item("retirement", "skip" if protected else "unresolved" if hidden else
                            "end" if cur and cur.get("invalidated_at") is None else "skip",
-                           cur["text"] if cur else mid, "memory id is not visible to this persona" if hidden else
+                           cur["text"] if cur else mid, "deferred retirement during private refresh" if protected else
+                           "memory id is not visible to this persona" if hidden else
                            "requested invalidation" if cur else "unknown memory id", id=mid))
     for mid in ex.completed_plans:
         cur = memory(mid)
@@ -194,8 +229,9 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         restated = found and (any(mid in m.supersedes for m in ex.memories) or any(
             m.kind == "plan" and _to_date(m.due_on) is not None and _to_date(m.due_on) == cur.get("due_on")
             and m.text.strip().lower() == cur["text"].strip().lower() for m in ex.memories))
-        items.append(_item("completion", "unresolved" if hidden else "end" if found and not restated else "skip",
-                           cur["text"] if cur else mid, "memory id is not visible to this persona" if hidden else
+        items.append(_item("completion", "skip" if protected else "unresolved" if hidden else "end" if found and not restated else "skip",
+                           cur["text"] if cur else mid, "deferred plan completion during private refresh" if protected else
+                           "memory id is not visible to this persona" if hidden else
                            "same extraction re-states plan; keep open" if restated else
                            "would mark plan done" if found else "no open plan with this id", id=mid))
 
@@ -206,8 +242,16 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         resolved_about = [(n, lookup(n)) for n in mem.about]
         about_ids = {eid for _, eid in resolved_about if eid and eid != store.user}
         unresolved = [n for n, eid in resolved_about if not eid]
-        decision = store._memory_decision(mem, vec, about_ids, episode_id, now, stored, tombstones)
+        base_decision = store._memory_decision(mem, vec, about_ids, episode_id, now, stored, tombstones)
+        decision = store.refresh_memory_guard(mem, base_decision, protected)
         action, reason = decision["action"], decision["reason"]
+        details["incoming_private"] = store._private(mem)
+        if base_decision["action"] == "reinforce":
+            details.update(private=base_decision["private"], private_before=base_decision["private"],
+                           private_after=base_decision["private"])
+        if action == "new" and protected:
+            details.update(incoming_private=store._private(mem), private=True)
+            reason += f"; private to {store.agent} by refresh privacy floor"
         if unresolved or pending_merges or pending_retirements:
             details["current_graph_match"] = {k: decision[k] for k in ("action", "id", "score") if k in decision}
             details["unresolved_about"] = unresolved
@@ -231,18 +275,20 @@ def preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: s
         for mid in mem.supersedes:
             cur = memory(mid)
             hidden = cur and cur.get("_hidden")
-            effective = (action in ("new", "reinforce") and mid != decision.get("id") and cur
+            effective = (not protected and action in ("new", "reinforce") and mid != decision.get("id") and cur
                          and not hidden and cur.get("invalidated_at") is None)
-            items.append(_item("retirement", "unresolved" if hidden else "end" if effective else
+            items.append(_item("retirement", "skip" if protected else "unresolved" if hidden else "end" if effective else
                                "unresolved" if action == "unresolved" else "skip",
                                cur["text"] if cur else mid,
+                               "deferred replacement during private refresh" if protected else
                                "memory id is not visible to this persona" if hidden else
                                "replaced by proposed memory" if effective else "no effective replacement established", id=mid))
             if effective:
                 pending_retirements.add(mid)
     for name in ex.forget_entities:
         eid = lookup(name)
-        items.append(_item("forgetting", "end" if eid and eid != store.user else "skip", name,
+        items.append(_item("forgetting", "skip" if protected else "end" if eid and eid != store.user else "skip", name,
+                           "deferred forgetting during private refresh; confirm through normal chat" if protected else
                            "would delete entity, its links and matching memories, redact turns and summaries; not applied"
                            if eid and eid != store.user else "no forgettable entity resolved",
                            id=eid if eid and not eid.startswith("proposal:") else None))

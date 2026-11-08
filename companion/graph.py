@@ -274,7 +274,7 @@ def episode_pass(store: MemoryStore, episode_id: str, today: dt.date, apply: boo
     )
     if not apply:
         return extraction
-    return [f"(episode pass) {l}" for l in store.apply(extraction, episode_id, today)]
+    return [f"(episode pass) {l}" for l in store.apply(extraction, episode_id, today, refresh=refresh)]
 
 
 def close_episode(store: MemoryStore, episode_id: str, today: dt.date | None = None) -> list[str]:
