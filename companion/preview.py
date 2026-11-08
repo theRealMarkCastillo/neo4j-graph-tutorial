@@ -119,6 +119,7 @@ def _preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: 
     private_names = {n.lower() for m in ex.memories if store._private(m) for n in m.about}
     shared_names = {n.lower() for m in ex.memories if not store._private(m) for n in m.about}
 
+    proposed_relations = []
     for rel, a, b, canon, how in resolved:
         source, target = (rel.target, rel.source) if how == "flipped" else (rel.source, rel.target)
         text = f"{source} -{canon}-> {target}"
@@ -136,7 +137,19 @@ def _preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: 
         if temporary_relation(ex, rel, canon, now):
             items.append(_item("relation", "skip", text, "only a temporary memory mentions it (trip, not move)", details=details))
             continue
-        if protected and (guard := store.refresh_relation_guard(rel, a, b, canon, how)):
+        if protected and any(
+            pa == a and ((pb == b and (pt == canon or pt in (ontology.rule(canon, "exclusive") or [])))
+                         or (ontology.rule(canon, "cardinality") == "one"
+                             and pt in (ontology.lineage(canon) | {canon})))
+            for pa, pb, pt in proposed_relations
+        ):
+            items.append(_item("relation", "unresolved", text,
+                               "an earlier proposal changes duplicate/cardinality/exclusive matching", details=details))
+            continue
+        if refresh and (guard := store.refresh_relation_guard(rel, a, b, canon, how, protected=protected)):
+            if guard.get("hidden"):
+                items.append(_item("relation", "unresolved", text, guard["reason"], details=details))
+                continue
             existing = store._q("MATCH (:Entity {id:$a, user:$user})-[r:RELATED {type:$type}]->(:Entity {id:$b}) "
                                 "RETURN properties(r) AS r", a=a, b=b, type=canon)
             old_private = all(bool(r["r"].get("private")) for r in existing) if existing else None
@@ -186,6 +199,8 @@ def _preview_extraction(store: MemoryStore, extraction: Extraction, episode_id: 
         if how == "new":
             reason += "; unknown type would be proposed to ontology"
         items.append(_item("relation", action, text, reason, details=details))
+        if protected and action == "new":
+            proposed_relations.append((a, b, canon))
         # The same cardinality and exclusive-type rules used by apply end other links.
         replacement_types = sorted(ontology.lineage(canon) | {canon}) if ontology.rule(canon, "cardinality") == "one" else []
         exclusive = ontology.rule(canon, "exclusive") or []

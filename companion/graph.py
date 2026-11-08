@@ -33,6 +33,7 @@ import observability
 from companion import clock
 from companion.worker import Background
 from companion.extract import extract_episode, extract_memories, find_pattern, line, summarize_episode
+from companion.models import Extraction
 from companion.store import MemoryStore, format_context
 
 # Lesson 16: personas share the user's memory. Each has its own voice; unknown names get the default.
@@ -267,11 +268,20 @@ def episode_pass(store: MemoryStore, episode_id: str, today: dt.date, apply: boo
     if sum(t["role"] == store.user_name for t in turns) < (1 if refresh else 2):  # cross-turn facts need 2+ user messages
         return [] if apply else None
     labeled = "\n".join(line(store.user_name, t["role"], t["text"]) for t in turns)
-    extraction = extract_episode(
-        store.user_name, labeled,
-        candidates=store.extraction_candidates(labeled[-2000:], k=15, episode_id=episode_id, today=today),
-        entities=store.known_entities(), today=today, refresh=refresh,
-    )
+    candidates = store.extraction_candidates(labeled[-2000:], k=15, episode_id=episode_id, today=today)
+    if refresh:
+        entity_rows = store.entity_context()
+        entities = store.describe_entities(entity_rows)
+        context = store.refresh_privacy(Extraction(), episode_id)
+        if (any(c.get("kind") != "boundary" and (c.get("private") or c.get("sensitive")) for c in candidates)
+                or any(e.get("private") for e in entity_rows)):
+            context = {"private": True, "reason": "private candidate/entity context supplied to extraction"}
+    else:
+        entities = store.known_entities()
+    extraction = extract_episode(store.user_name, labeled, candidates=candidates, entities=entities,
+                                 today=today, refresh=refresh)
+    if refresh:
+        extraction._refresh_context = dict(context)
     if not apply:
         return extraction
     return [f"(episode pass) {l}" for l in store.apply(extraction, episode_id, today, refresh=refresh)]

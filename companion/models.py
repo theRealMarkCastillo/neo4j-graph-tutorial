@@ -1,7 +1,7 @@
 """What the extraction LLM returns after each exchange (validated with Pydantic)."""
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 EntityKind = Literal["person", "pet", "place", "organization", "activity", "thing"]
 MemoryKind = Literal["fact", "preference", "event", "plan", "feeling", "status", "boundary"]
@@ -40,6 +40,8 @@ class MemoryOut(BaseModel):
 
 
 class Extraction(BaseModel):
+    # Trusted caller provenance, excluded from model input/output schemas and JSON.
+    _refresh_context: dict | None = PrivateAttr(default=None)
     entities: list[EntityOut] = Field(default_factory=list)
     relations: list[RelationOut] = Field(default_factory=list)
     memories: list[MemoryOut] = Field(default_factory=list)

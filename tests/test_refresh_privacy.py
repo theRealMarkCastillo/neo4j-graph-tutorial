@@ -176,18 +176,23 @@ def test_private_evidence_from_another_episode_protects_new_links(store, monkeyp
     assert row["private"] is True
 
 
-def test_unrelated_private_material_does_not_privatize_public_refresh(store, monkeypatch):
+def test_private_entity_context_makes_an_otherwise_public_refresh_protected(store, monkeypatch):
     source_episode(store)
     ep = store.start_episode(on=DAY)
     store.log_turn(ep, store.user_name, "Bob is my coworker")
     store.apply(Extraction(entities=[EntityOut(name="Bob", kind="person", new=True)],
                            memories=[memory("Bob is Pytest's coworker", ["Bob"])]), ep, DAY)
-    refreshed(monkeypatch, Extraction(entities=[EntityOut(name="chess", kind="activity", new=True)],
-                                      relations=[RelationOut(source="Bob", target="chess", type="likes")],
-                                      memories=[memory("Bob enjoys chess", ["Bob", "chess"])]))
+    def extract(*args, **kwargs):
+        # The broad entity context really does contain the private Ana record.
+        assert any("Ana" in e for e in kwargs["entities"])
+        return Extraction(entities=[EntityOut(name="chess", kind="activity", new=True)],
+                          relations=[RelationOut(source="Bob", target="chess", type="likes")],
+                          memories=[memory("Bob enjoys chess", ["Bob", "chess"])])
+    monkeypatch.setattr(graph, "extract_episode", extract)
     graph.episode_pass(store, ep, DAY, refresh=True)
     other = MemoryStore(store.driver, store.user_name, agent="Other")
-    assert any("Bob enjoys chess" == m["text"] for m in other.memories(today=DAY))
+    assert not any("Bob enjoys chess" == m["text"] for m in other.memories(today=DAY))
+    assert any("Bob is Pytest's coworker" == m["text"] for m in other.memories(today=DAY))
     assert not any("Ana" in m["text"] for m in other.memories(today=DAY))
 
 
@@ -250,3 +255,81 @@ def test_refresh_scope_restores_normal_matching_after_failure(store, monkeypatch
         store.apply(Extraction(), refresh=True)
     # The existing normal-store matching contract remains unchanged after the failure.
     assert store.resolve_entity("Ana", "person") == entity["id"]
+
+
+@pytest.mark.parametrize("remove_source", [False, True])
+def test_graph_only_refresh_inherits_private_candidate_provenance(store, monkeypatch, remove_source):
+    ep1 = store.start_episode(on=DAY)
+    hobby = memory("Pytest enjoys pottery", ["user"], private=True)
+    store.apply(Extraction(memories=[hobby]), ep1, DAY)
+    [private] = store.memories(today=DAY)
+    ep2 = store.start_episode(on=DAY)
+    store.log_turn(ep2, store.user_name, "I still enjoy pottery. The weekend was quiet.")
+    store.apply(Extraction(memories=[hobby]), ep2, DAY)  # reinforcement has no FROM to ep2
+    store.apply(Extraction(memories=[memory("Pytest had a quiet weekend", ["user"])]), ep2, DAY)
+    assert store._q("MATCH (:Memory {id:$id})-[:FROM]->(:Episode {id:$ep}) RETURN 1 AS yes", id=private["id"], ep=ep2) == []
+    def extract(*args, **kwargs):
+        assert any(c["id"] == private["id"] for c in kwargs["candidates"])
+        if remove_source:
+            store._q("MATCH (m:Memory {user:$user, id:$id}) DETACH DELETE m", id=private["id"])
+        return Extraction(entities=[EntityOut(name="pottery", kind="activity", new=True)],
+                          relations=[RelationOut(source="user", target="pottery", type="likes")])
+    monkeypatch.setattr(graph, "extract_episode", extract)
+    graph.episode_pass(store, ep2, DAY, refresh=True)
+    [link] = store._q("MATCH (:User {id:$user})-[r:RELATED {type:'likes'}]->() RETURN r.private AS private")
+    assert link["private"] is True
+
+
+def test_public_refresh_cannot_expose_or_end_hidden_cardinality_conflicts(store, monkeypatch):
+    from companion.preview import preview_extraction
+    import json
+    other = MemoryStore(store.driver, store.user_name, agent="Other")
+    other.apply(Extraction(entities=[EntityOut(name="SecretClinic", kind="place", new=True)],
+                           relations=[RelationOut(source="user", target="SecretClinic", type="lives_in")],
+                           memories=[memory("Pytest is staying at SecretClinic", ["user", "SecretClinic"], private=True)]), today=DAY)
+    [hidden] = store._q("MATCH (e:Entity {user:$user, name:'SecretClinic'}) RETURN e.id AS id")
+    ep = store.start_episode(on=DAY)
+    store.log_turn(ep, store.user_name, "I lived in Boston")
+    store.apply(Extraction(memories=[memory("Pytest discussed housing", ["user"])]), ep, DAY)
+    ex = Extraction(entities=[EntityOut(name="Boston", kind="place", new=True)],
+                    relations=[RelationOut(source="user", target="Boston", type="lives_in")])
+    refreshed(monkeypatch, ex)
+    captured = graph.episode_pass(store, ep, DAY, apply=False, refresh=True)
+    with MemoryStore.read_view(store.driver, store.user_name) as view:
+        items = preview_extraction(view, captured, ep, DAY, refresh=True)
+    rendered = json.dumps(items)
+    assert "SecretClinic" not in rendered and hidden["id"] not in rendered
+    assert any(i["category"] == "relation" and i["action"] == "unresolved" for i in items)
+    log = graph.episode_pass(store, ep, DAY, refresh=True)
+    assert all("SecretClinic" not in line and hidden["id"] not in line for line in log)
+    [link] = store._q("MATCH (:User {id:$user})-[r:RELATED]->(:Entity {id:$id}) RETURN r.until AS ended", id=hidden["id"])
+    assert link["ended"] is None
+
+
+@pytest.mark.parametrize("case", ["cardinality", "exclusive", "repeat"])
+def test_protected_preview_marks_conflicting_later_additions_unresolved(store, case):
+    from companion.preview import preview_extraction
+    ep = source_episode(store)
+    if case == "cardinality":
+        entities = [EntityOut(name=n, kind="place", new=True) for n in ("Boston", "Denver")]
+        rels = [RelationOut(source="user", target=n, type="lives_in") for n in ("Boston", "Denver")]
+        types = ["lives_in"]
+    else:
+        entities = [EntityOut(name="Coffee", kind="thing", new=True)]
+        rels = [RelationOut(source="user", target="Coffee", type=t) for t in
+                ("likes", "dislikes" if case == "exclusive" else "likes")]
+        types = ["likes", "dislikes"]
+    ex = Extraction(entities=entities, relations=rels)
+    with MemoryStore.read_view(store.driver, store.user_name) as view:
+        items = [i for i in preview_extraction(view, ex, ep, DAY, refresh=True) if i["category"] == "relation"]
+    assert [i["action"] for i in items] == ["new", "unresolved"]
+    assert "earlier proposal" in items[1]["reason"]
+    store.apply(ex, ep, DAY, refresh=True)
+    links = store._q("MATCH (:User {id:$user})-[r:RELATED]->() WHERE r.until IS NULL AND r.type IN $types RETURN r.type AS type", types=types)
+    assert len(links) == 1
+
+
+def test_untrusted_extraction_cannot_override_refresh_context():
+    ex = Extraction.model_validate({"_refresh_context": {"private": False}})
+    assert ex._refresh_context is None
+    assert "_refresh_context" not in ex.model_dump()

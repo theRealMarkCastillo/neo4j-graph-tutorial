@@ -589,6 +589,9 @@ class MemoryStore:
         refresh. Public-only evidence keeps the normal structural refresh behavior.
         Read-only so dry run and apply use the same decision.
         """
+        captured = ex._refresh_context
+        if captured and captured["private"]:
+            return captured
         [source] = self._q(
             "MATCH (m:Memory {user:$user})-[:FROM]->(:Episode {id:$ep, user:$user}) "
             "WHERE m.kind <> 'boundary' RETURN count(m) AS n, "
@@ -599,35 +602,42 @@ class MemoryStore:
             return {"private": True, "reason": "private source evidence or incoming private material"}
         if not source["n"]:
             return {"private": True, "reason": "original source privacy cannot be established"}
-        names = {n for m in ex.memories for n in m.about}
-        names.update(n for e in ex.entities for n in [e.name, *e.aliases, *([e.ref] if e.ref else [])])
-        names.update(n for r in ex.relations for n in (r.source, r.target))
-        names.update(ex.forget_entities)
-        ids = {eid for n in names if (eid := self._lookup(n, {})) and eid != self.user}
-        # Include fuzzy-selected entity identities without reconciling or writing them.
-        for ent in ex.entities:
-            if not self._is_user(ent.name):
-                eid, _ = self._find_entity(ent.name, ent.kind, ent.aliases, ent.summary, ent.ref, ent.new)
-                if eid:
-                    ids.add(eid)
-        cited = list(ex.invalidate) + list(ex.completed_plans) + [i for m in ex.memories for i in m.supersedes]
+        # The extractor gets broad candidate/entity context, not only the proposed
+        # output's entities. A graph-only paraphrase has no reliable output-level
+        # provenance. Direct preview/apply callers therefore use this safe superset.
         protected = self._q(
-            "MATCH (m:Memory {user:$user}) WHERE m.kind <> 'boundary' "
-            "AND (coalesce(m.private,false) OR coalesce(m.sensitive,false)) "
-            "AND (m.id IN $cited OR toLower(trim(m.text)) IN $texts "
-            "OR EXISTS { MATCH (m)-[:ABOUT]->(e) WHERE e.id IN $ids }) RETURN m.id AS id LIMIT 1",
-            cited=cited, texts=[m.text.strip().lower() for m in ex.memories], ids=sorted(ids),
-        )
-        if not protected and ids:
+            "MATCH (m:Memory {user:$user}) WHERE m.kind <> 'boundary' AND " + visible("m") +
+            " AND (coalesce(m.private,false) OR coalesce(m.sensitive,false)) RETURN m.id AS id LIMIT 1")
+        if not protected:
             protected = self._q(
-                "MATCH (e:Entity {user:$user}) WHERE e.id IN $ids AND (coalesce(e.private,false) "
-                "OR EXISTS { MATCH (e)-[r:RELATED]-() WHERE coalesce(r.private,false) }) "
-                "RETURN e.id AS id LIMIT 1", ids=sorted(ids),
-            )
-        return {"private": bool(protected), "reason": "related stored evidence is private" if protected else "stored source evidence is shared"}
+                "MATCH (e:Entity {user:$user}) WHERE " + entity_visible("e") +
+                " AND coalesce(e.private,false) RETURN e.id AS id LIMIT 1")
+        if not protected:
+            protected = self._q(
+                "MATCH (:Entity {user:$user})-[r:RELATED]->() WHERE " + visible("r") +
+                " AND coalesce(r.private,false) RETURN r.type AS type LIMIT 1")
+        return {"private": bool(protected), "reason": "private context is visible to the extractor" if protected else "stored source and extractor context are shared"}
 
-    def refresh_relation_guard(self, rel, a, b, canon, how) -> dict | None:
+    def refresh_relation_guard(self, rel, a, b, canon, how, *, protected: bool = True) -> dict | None:
         """Private-context refresh may add private links, not rewrite existing graph facts."""
+        lineage = sorted(ontology.lineage(canon) | {canon})
+        replacement = lineage if ontology.rule(canon, "cardinality") == "one" else []
+        role_types = lineage if a == self.user and canon in one_person_roles() else []
+        end_types = lineage if rel.ended else []
+        hidden = self._q(
+            "MATCH (:Entity {id:$a, user:$user})-[r:RELATED]->(e) WHERE "
+            "((e.id=$b AND r.type=$type) OR (r.until IS NULL AND "
+            "(r.type IN $types OR r.type IN $roles OR (e.id=$b AND r.type IN $exclusive) "
+            "OR (e.id=$b AND r.type IN $ending)))) "
+            "AND (NOT " + visible("r") + " OR NOT " + entity_visible("e") + ") "
+            "RETURN count(r) AS n", a=a, b=b, type=canon, types=replacement, roles=role_types,
+            exclusive=ontology.rule(canon, "exclusive") or [], ending=end_types,
+        )
+        if hidden[0]["n"]:
+            return {"action": "unresolved", "hidden": True,
+                    "reason": "deferred reconciliation involving links not visible to the source persona"}
+        if not protected:
+            return None
         if rel.ended:
             return {"action": "skip", "reason": "deferred relation ending during private refresh"}
         if how == "new":
@@ -731,7 +741,7 @@ class MemoryStore:
         linking = {(a, b, canon) for rel, a, b, canon, _ in resolved if not rel.ended}
         linked: list[tuple[str, str, str]] = []  # edges this extraction (re)asserts: evidence below
         for rel, a, b, canon, how in resolved:
-            if protected and (guard := self.refresh_relation_guard(rel, a, b, canon, how)):
+            if refresh and (guard := self.refresh_relation_guard(rel, a, b, canon, how, protected=protected)):
                 log.append(guard["reason"])
                 continue
             if rel.ended and (a, b, canon) in linking:
@@ -1001,37 +1011,52 @@ class MemoryStore:
             WHERE m.user = $user AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now) AND coalesce(m.status, '') <> 'done'
               AND """ + visible("m") + """
             WITH m ORDER BY score DESC LIMIT $k  // filter first, then keep the top k
-            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
+            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status,
+                   coalesce(m.private,false) AS private, coalesce(m.sensitive,false) AS sensitive, m.agent AS agent
             UNION
             MATCH (m:Memory)-[:ABOUT]->(e:Entity {user: $user}) WHERE e.kind <> 'self' AND m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
               AND coalesce(m.status, '') <> 'done' AND """ + visible("m") + """
               AND any(n IN [e.name] + coalesce(e.aliases, []) WHERE size(n) > 2 AND toLower($text) CONTAINS toLower(n))
-            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
+            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status,
+                   coalesce(m.private,false) AS private, coalesce(m.sensitive,false) AS sensitive, m.agent AS agent
             UNION
             MATCH (m:Memory {user: $user, kind: 'plan', status: 'open'}) WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
               AND """ + visible("m") + """
-            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
+            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status,
+                   coalesce(m.private,false) AS private, coalesce(m.sensitive,false) AS sensitive, m.agent AS agent
             UNION
             MATCH (m:Memory)-[:FROM]->(:Episode {id: $ep}) WHERE m.invalidated_at IS NULL AND (m.valid_until IS NULL OR m.valid_until > $now)
               AND """ + visible("m") + """
-            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status
+            RETURN m.id AS id, m.kind AS kind, m.text AS text, m.status AS status,
+                   coalesce(m.private,false) AS private, coalesce(m.sensitive,false) AS sensitive, m.agent AS agent
             """,
             k=k, vec=embed([text], query=True)[0], text=text, ep=episode_id or "",
             now=clock.now_for(today or dt.date.today()),
         )
 
-    def known_entities(self) -> list[str]:
+    def entity_context(self) -> list[dict]:
         """Entities shown to the extractor, with ids so it can tell two Sams apart."""
-        rows = self._q(
+        return self._q(
             """
             MATCH (e:Entity {user: $user}) WHERE e.kind <> 'self' AND """ + entity_visible("e") + """
             OPTIONAL MATCH (:User {id: $user})-[r:RELATED]->(e) WHERE r.until IS NULL AND """ + visible("r") + """
-            RETURN e.id AS id, e.name AS name, e.kind AS kind, e.summary AS summary,
-                   collect(r.type) AS rel ORDER BY e.name
+            WITH e, collect(r.type) AS rel
+            RETURN e.id AS id, e.name AS name, e.kind AS kind, e.summary AS summary, rel,
+                (coalesce(e.private,false)
+                 OR EXISTS { MATCH (m:Memory)-[:ABOUT]->(e) WHERE m.kind <> 'boundary'
+                     AND (coalesce(m.private,false) OR coalesce(m.sensitive,false)) AND """ + visible("m") + """ }
+                 OR EXISTS { MATCH (e)-[r:RELATED]-() WHERE coalesce(r.private,false) AND """ + visible("r") + """ }) AS private
+            ORDER BY e.name
             """
         )
+
+    @staticmethod
+    def describe_entities(rows: list[dict]) -> list[str]:
         return [f"{r['id']}: {r['name']} ({r['kind']}{', ' + '/'.join(r['rel']) if r['rel'] else ''})"
                 + (f" — {r['summary']}" if r["summary"] else "") for r in rows]
+
+    def known_entities(self) -> list[str]:
+        return self.describe_entities(self.entity_context())
 
     def inferred_relations(self, now: dt.datetime | None = None) -> list[dict]:
         """Relatives the user never linked directly, inferred with the ontology's kinship rules
