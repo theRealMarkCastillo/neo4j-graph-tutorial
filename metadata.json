@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M6Y99J1DN2RNTNZNW5G1CMRQ",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "README.md",
+    "companion/trace_to_case.py",
+    "observability.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 550,
+    "cache_creation_tokens": 904754,
+    "cache_read_tokens": 50866325,
+    "output_tokens": 156265,
+    "api_call_count": 236
+  },
+  "redaction": {
+    "replacements": 876,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 129,
+      "credentialed_uri": 0,
+      "entropy": 692,
+      "key_context": 35,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
