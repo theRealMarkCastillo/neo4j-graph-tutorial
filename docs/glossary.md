@@ -551,6 +551,7 @@ relying on a product detail.
 - Stardog platform — https://www.stardog.com/product/
 - Letta MemFS (git-backed memory files) — https://docs.letta.com/concepts/memfs ; context repositories — https://www.letta.com/blog/context-repositories
 - Cognee (add / cognify / memify pipeline) — https://github.com/topoteretes/cognee
+- Semantica (context graphs, decision records, conflict resolution, PROV-O; README only) — https://github.com/semantica-agi/semantica
 - Neo4j Labs agent memory (short-term, long-term POLE+O, reasoning memory) — https://neo4j.com/labs/agent-memory
 - Amazon Bedrock AgentCore Memory (short-term events, long-term strategies) — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-memory.html
 - Vertex AI Agent Engine Memory Bank (scopes, similarity search) — https://docs.cloud.google.com/agent-builder/agent-engine/memory-bank/overview

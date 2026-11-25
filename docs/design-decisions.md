@@ -603,6 +603,7 @@ shape of each approach, not a feature list.
 | **LangMem** | LangGraph `BaseStore` | hot-path tools and/or a background memory manager | *profile* (one schema) or *collection* (many items) | store search |
 | **Cognee** | graph + vector + relational, pluggable backends (Neo4j, FalkorDB, Kuzu/LadybugDB…) | an ECL pipeline: *add*, *cognify* (extract a graph), optional *memify* enrichment | re-run the pipeline; enrichment infers new links | graph and vector search combined |
 | **Neo4j Labs `neo4j-agent-memory`** | Neo4j: short-term (messages), long-term (a POLE+O entity graph), *reasoning* memory (decision traces) | extraction pipeline with deduplication | entity merge | Cypher tools, also as an MCP server; a Labs project, so no support guarantees |
+| **Semantica** | a "semantic layer" library: swappable RDF stores (Oxigraph, Jena…) and property graphs (Neo4j, FalkorDB…) plus a separate vector store | ingestion and extraction pipelines (NER, relations, events) over enterprise sources; agents record *decisions* as nodes | conflicts across sources detected and resolved by strategy (source credibility, most recent, voting); bi-temporal facts and point-in-time snapshots | graph traversal + vector search; rule engines (forward chaining, Rete, Datalog, SPARQL); MCP server and REST API |
 | **Cloud memory services** (Bedrock AgentCore Memory, Vertex AI Memory Bank) | managed store of extracted memory records per scope (user, session) | the service, asynchronously, from stored conversation events | the service consolidates (Memory Bank asks Gemini to merge and resolve contradictions) | similarity search within one scope |
 | **Files the agent edits** (Anthropic memory tool, Letta MemFS, OpenAI Agents SDK sessions for history only) | Markdown files, versioned with git in Letta's case | the agent, with file tools | edit in place, history in git | file search and reads, no vector index by default |
 | **Microsoft GraphRAG** | entity graph + community summaries over a corpus | offline indexing | re-index | local, global, DRIFT; LazyGraphRAG defers summarization to query time |
@@ -621,6 +622,16 @@ Neo4j's own Labs package is the closest *on the same database*. Its three layers
 ours: short-term messages ≈ the checkpointer plus `Episode` nodes, long-term entity graph ≈
 the life graph, reasoning memory ≈ nothing here (we don't store the agent's own decision
 traces; [Lesson 18](../lessons/18-seeing-memory-work.md)'s trace is shown, not stored).
+
+Semantica sits at the other end: a broad, enterprise-oriented knowledge layer rather than
+memory for one person. It covers several of the [gaps](#gaps-what-this-design-does-not-cover) above. Its decision records, linked by
+cause and searchable by precedent, are a form of reasoning memory. Its per-source credibility
+and conflict resolution speak to memory poisoning. It also offers RDF/OWL/SHACL and W3C
+PROV-O export, the interoperability D3 gave up. What it doesn't center on is what a companion
+needs most: memory scoped to a user and a persona (D4, D17), forgetting by deletion (D18)
+rather than keeping everything for audit, decay and consolidation over time (Lesson 13), and
+recall tuned and evaluated per turn (D10–D12, D20). Use it as a reference when building
+decision traces or source trust here, not as a drop-in replacement.
 
 The 2026 trend is in two directions at once: cloud platforms hide memory behind an API with
 scopes and similarity search, while coding agents move memory into plain files the model edits.
