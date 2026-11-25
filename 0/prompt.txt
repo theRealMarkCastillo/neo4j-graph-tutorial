@@ -1,0 +1,9 @@
+compare and contrast this other repo's project to ours. I think there are some gaps and some overlap? https://github.com/semantica-agi/semantica
+
+---
+
+Yes, add it
+
+---
+
+Commit the working tree changes with a sensible message.
